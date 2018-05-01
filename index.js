@@ -80,7 +80,7 @@ ballSprite.hitArea = new PIXI.Circle(p2spc(BALL_RADIUS), p2spc(BALL_RADIUS), p2s
 
 for (let light of lights) {
     light.reach = Math.round(-100 / DISTANCE_BRIGHTNESS_FACTOR + p2sp(light.radius));
-    const lightSprite = PIXI.Sprite.fromImage("light.png");
+    const lightSprite = PIXI.Sprite.fromImage("assets/light.png");
     lightSprite.x = light.x;
     lightSprite.y = light.y
     lightSprite.z = light.z;
@@ -115,7 +115,7 @@ function createSpriteContainer(imageName, width, height) {
     const canvas = document.createElement("canvas");
     const context = canvas.getContext("2d");
 
-    const colorTexture = PIXI.RenderTexture.fromImage(imageName + ".png");
+    const colorTexture = PIXI.RenderTexture.fromImage("assets/" + imageName + ".png");
     canvas.width = width;
     canvas.height = height;
     try {
@@ -126,7 +126,7 @@ function createSpriteContainer(imageName, width, height) {
     }
     const colorData = context.getImageData(0, 0, width, height).data;
 
-    const depthTexture = PIXI.RenderTexture.fromImage(imageName + "_depths.png");
+    const depthTexture = PIXI.RenderTexture.fromImage("assets/" + imageName + "_depths.png");
     try {
         context.drawImage(depthTexture.baseTexture.source, 0, 0, width, height, 0, 0, width, height);
     } catch (_) {
@@ -235,7 +235,7 @@ function createSpriteContainer(imageName, width, height) {
 }
 
 const charContainer = createSpriteContainer("char01", 22, 57);
-charContainer.x = 0;//400;
+charContainer.x = 400;
 charContainer.y = 400;
 charContainer.z = CHAR_DEPTH;
 charContainer.scale.x = charContainer.scale.y = 1 + charContainer.z / depth;
