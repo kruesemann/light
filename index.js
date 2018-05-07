@@ -1,3 +1,5 @@
+PIXI.settings.SCALE_MODE = PIXI.SCALE_MODES.NEAREST;
+
 const SUPERPIXEL_SIZE = 3;
 const OVERLAP_PADDING = 40; // Needed for fast moving objects, as they tend to cause shadow artifacts. 40 should be sufficient for a maximum movement speed of 100px/tick.
 const BASE_LIGHT_BRIGHTNESS = 0.15;
@@ -24,7 +26,7 @@ const lights = [
 const objects = [];
 const updateQueue = [];
 
-let counter = 1;
+//let counter = 1;
 
 function gameloop(delta) {
     /*if(charContainer.x >= width) {
