@@ -6,7 +6,7 @@ APPLICATION = new PIXI.Application({
     width,
     height,
     autoResize: true,
-    backgroundColor: 0x000000
+    backgroundColor: 0xffffee
 });
 
 window.onresize = function resize() {
@@ -462,7 +462,7 @@ class Matrix {
 }
 
 class PixelLightFilter extends PIXI.Filter {
-    constructor(bumpMapSprite, fragSrc, height, ambient, lightColors, lightCoords, scale) {
+    constructor(bumpMapSprite, fragSrc, height, lightColor, lightCoord, scale) {
         const maskMatrix = new Matrix();
         bumpMapSprite.renderable = false;
         super(null, fragSrc);
@@ -472,9 +472,8 @@ class PixelLightFilter extends PIXI.Filter {
 
         this.uniforms = {
             uHeight: height,
-            uAmbient: ambient,
-            uLightColors: lightColors,
-            uLightCoords: lightCoords,
+            uLightColor: lightColor,
+            uLightCoord: lightCoord,
             uScale: scale,
             uBumpMap: bumpMapSprite._texture,
             filterMatrix: maskMatrix,
@@ -490,7 +489,23 @@ class PixelLightFilter extends PIXI.Filter {
     }
 }
 
+class AmbientLightFilter extends PIXI.Filter {
+    constructor(fragSrc, ambient) {
+        super(null, fragSrc);
+
+        this.uniforms.uAmbient = ambient;
+    }
+
+    apply(filterManager, input, output, clear) {
+        filterManager.applyFilter(this, input, output, clear);
+    }
+}
+
 const ambient = [0.2, 0.2, 0.2];
+
+const lights = [
+    { color: [1, 1, 1, 10], coords: [5, 5, 6] }
+];
 
 const lightColors = [
     1, 1, 1, 2,
@@ -515,7 +530,9 @@ for (let i = 0; i < 7; i++) {
     lightCoords.push(0);
 }
 
-PIXI.loader.add('pixelShader', 'pixelShader.frag')
+PIXI.loader
+    .add('pixelShader', 'pixelShader.frag')
+    .add('ambientLight', 'ambientLight.frag')
     .load(onLoaded);
 
 /*const bumpMap = PIXI.Sprite.fromImage("assets/char01_depths.png");
@@ -529,10 +546,10 @@ let clickX = 0;
 let clickY = 0;
 
 function onLoaded(loader, res) {
-    const char = createSprite("char01", 50, 50, 5, res);
+    const char = createSprite("char01", 100, 100, 3, res);
     char.drag = false;
     char.sprite.interactive = true;
-    char.sprite.hitArea = new PIXI.Rectangle(0, 0, 5 * 22, 5 * 57);
+    char.sprite.hitArea = new PIXI.Rectangle(0, 0, 22, 57);
     char.sprite.on("mousedown", event => {
         clickX = event.data.global.x - char.sprite.x;
         clickY = event.data.global.y - char.sprite.y;
@@ -548,10 +565,10 @@ function onLoaded(loader, res) {
         char.drag = false;
     });
 
-    const char2 = createSprite("char01", 100, 100, 3, res);
+    const char2 = createSprite("char01", 50, 50, 5, res);
     char2.drag = false;
     char2.sprite.interactive = true;
-    char2.sprite.hitArea = new PIXI.Rectangle(0, 0, 5 * 22, 5 * 57);
+    char2.sprite.hitArea = new PIXI.Rectangle(0, 0, 22, 57);
     char2.sprite.on("mousedown", event => {
         clickX = event.data.global.x - char2.sprite.x;
         clickY = event.data.global.y - char2.sprite.y;
@@ -577,9 +594,18 @@ function createSprite(textureName, x, y, z, res) {
     bumpMap.scale.x = bumpMap.scale.y = sprite.scale.x = sprite.scale.y = z;
     APPLICATION.stage.addChild(sprite);
 
-    const pixelLightFilter = new PixelLightFilter(bumpMap, res.pixelShader.data, z, ambient, lightColors, lightCoords, z);
-    pixelLightFilter.autoFit = false;
-    sprite.filters = [pixelLightFilter];
+    const ambientLightFilter = new AmbientLightFilter(res.ambientLight.data, ambient);
+    ambientLightFilter.autoFit = false;
+    const filters = [ambientLightFilter];
+
+    for (let light of lights) {
+        const pixelLightFilter = new PixelLightFilter(bumpMap, res.pixelShader.data, z, light.color, light.coords, z);
+        pixelLightFilter.autoFit = false;
+        filters.push(pixelLightFilter);
+    }
+
+    //sprite.blendMode = PIXI.BLEND_MODES.ADD;
+    sprite.filters = filters;
 
     return { sprite, bumpMap };
 }
