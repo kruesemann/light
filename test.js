@@ -6,7 +6,7 @@ APPLICATION = new PIXI.Application({
     width,
     height,
     autoResize: true,
-    backgroundColor: 0xffffee
+    backgroundColor: 0x000000
 });
 
 window.onresize = function resize() {
@@ -17,595 +17,139 @@ window.onresize = function resize() {
 
 document.body.appendChild(APPLICATION.view);
 
-class Matrix {
-    /**
-     * @param {number} [a=1] - x scale
-     * @param {number} [b=0] - x skew
-     * @param {number} [c=0] - y skew
-     * @param {number} [d=1] - y scale
-     * @param {number} [tx=0] - x translation
-     * @param {number} [ty=0] - y translation
-     */
-    constructor(a = 1, b = 0, c = 0, d = 1, tx = 0, ty = 0) {
-        /**
-         * @member {number}
-         * @default 1
-         */
-        this.a = a;
-
-        /**
-         * @member {number}
-         * @default 0
-         */
-        this.b = b;
-
-        /**
-         * @member {number}
-         * @default 0
-         */
-        this.c = c;
-
-        /**
-         * @member {number}
-         * @default 1
-         */
-        this.d = d;
-
-        /**
-         * @member {number}
-         * @default 0
-         */
-        this.tx = tx;
-
-        /**
-         * @member {number}
-         * @default 0
-         */
-        this.ty = ty;
-
-        this.array = null;
-    }
-
-    /**
-     * Creates a Matrix object based on the given array. The Element to Matrix mapping order is as follows:
-     *
-     * a = array[0]
-     * b = array[1]
-     * c = array[3]
-     * d = array[4]
-     * tx = array[2]
-     * ty = array[5]
-     *
-     * @param {number[]} array - The array that the matrix will be populated from.
-     */
-    fromArray(array) {
-        this.a = array[0];
-        this.b = array[1];
-        this.c = array[3];
-        this.d = array[4];
-        this.tx = array[2];
-        this.ty = array[5];
-    }
-
-    /**
-     * sets the matrix properties
-     *
-     * @param {number} a - Matrix component
-     * @param {number} b - Matrix component
-     * @param {number} c - Matrix component
-     * @param {number} d - Matrix component
-     * @param {number} tx - Matrix component
-     * @param {number} ty - Matrix component
-     *
-     * @return {PIXI.Matrix} This matrix. Good for chaining method calls.
-     */
-    set(a, b, c, d, tx, ty) {
-        this.a = a;
-        this.b = b;
-        this.c = c;
-        this.d = d;
-        this.tx = tx;
-        this.ty = ty;
-
-        return this;
-    }
-
-    /**
-     * Creates an array from the current Matrix object.
-     *
-     * @param {boolean} transpose - Whether we need to transpose the matrix or not
-     * @param {Float32Array} [out=new Float32Array(9)] - If provided the array will be assigned to out
-     * @return {number[]} the newly created array which contains the matrix
-     */
-    toArray(transpose, out) {
-        if (!this.array) {
-            this.array = new Float32Array(9);
-        }
-
-        const array = out || this.array;
-
-        if (transpose) {
-            array[0] = this.a;
-            array[1] = this.b;
-            array[2] = 0;
-            array[3] = this.c;
-            array[4] = this.d;
-            array[5] = 0;
-            array[6] = this.tx;
-            array[7] = this.ty;
-            array[8] = 1;
-        }
-        else {
-            array[0] = this.a;
-            array[1] = this.c;
-            array[2] = this.tx;
-            array[3] = this.b;
-            array[4] = this.d;
-            array[5] = this.ty;
-            array[6] = 0;
-            array[7] = 0;
-            array[8] = 1;
-        }
-
-        return array;
-    }
-
-    /**
-     * Get a new position with the current transformation applied.
-     * Can be used to go from a child's coordinate space to the world coordinate space. (e.g. rendering)
-     *
-     * @param {PIXI.Point} pos - The origin
-     * @param {PIXI.Point} [newPos] - The point that the new position is assigned to (allowed to be same as input)
-     * @return {PIXI.Point} The new point, transformed through this matrix
-     */
-    apply(pos, newPos) {
-        newPos = newPos || new Point();
-
-        const x = pos.x;
-        const y = pos.y;
-
-        newPos.x = (this.a * x) + (this.c * y) + this.tx;
-        newPos.y = (this.b * x) + (this.d * y) + this.ty;
-
-        return newPos;
-    }
-
-    /**
-     * Get a new position with the inverse of the current transformation applied.
-     * Can be used to go from the world coordinate space to a child's coordinate space. (e.g. input)
-     *
-     * @param {PIXI.Point} pos - The origin
-     * @param {PIXI.Point} [newPos] - The point that the new position is assigned to (allowed to be same as input)
-     * @return {PIXI.Point} The new point, inverse-transformed through this matrix
-     */
-    applyInverse(pos, newPos) {
-        newPos = newPos || new Point();
-
-        const id = 1 / ((this.a * this.d) + (this.c * -this.b));
-
-        const x = pos.x;
-        const y = pos.y;
-
-        newPos.x = (this.d * id * x) + (-this.c * id * y) + (((this.ty * this.c) - (this.tx * this.d)) * id);
-        newPos.y = (this.a * id * y) + (-this.b * id * x) + (((-this.ty * this.a) + (this.tx * this.b)) * id);
-
-        return newPos;
-    }
-
-    /**
-     * Translates the matrix on the x and y.
-     *
-     * @param {number} x How much to translate x by
-     * @param {number} y How much to translate y by
-     * @return {PIXI.Matrix} This matrix. Good for chaining method calls.
-     */
-    translate(x, y) {
-        this.tx += x;
-        this.ty += y;
-
-        return this;
-    }
-
-    /**
-     * Applies a scale transformation to the matrix.
-     *
-     * @param {number} x The amount to scale horizontally
-     * @param {number} y The amount to scale vertically
-     * @return {PIXI.Matrix} This matrix. Good for chaining method calls.
-     */
-    scale(x, y) {
-        this.a *= x;
-        this.d *= y;
-        this.c *= x;
-        this.b *= y;
-        this.tx *= x;
-        this.ty *= y;
-
-        return this;
-    }
-
-    /**
-     * Applies a rotation transformation to the matrix.
-     *
-     * @param {number} angle - The angle in radians.
-     * @return {PIXI.Matrix} This matrix. Good for chaining method calls.
-     */
-    rotate(angle) {
-        const cos = Math.cos(angle);
-        const sin = Math.sin(angle);
-
-        const a1 = this.a;
-        const c1 = this.c;
-        const tx1 = this.tx;
-
-        this.a = (a1 * cos) - (this.b * sin);
-        this.b = (a1 * sin) + (this.b * cos);
-        this.c = (c1 * cos) - (this.d * sin);
-        this.d = (c1 * sin) + (this.d * cos);
-        this.tx = (tx1 * cos) - (this.ty * sin);
-        this.ty = (tx1 * sin) + (this.ty * cos);
-
-        return this;
-    }
-
-    /**
-     * Appends the given Matrix to this Matrix.
-     *
-     * @param {PIXI.Matrix} matrix - The matrix to append.
-     * @return {PIXI.Matrix} This matrix. Good for chaining method calls.
-     */
-    append(matrix) {
-        const a1 = this.a;
-        const b1 = this.b;
-        const c1 = this.c;
-        const d1 = this.d;
-
-        this.a = (matrix.a * a1) + (matrix.b * c1);
-        this.b = (matrix.a * b1) + (matrix.b * d1);
-        this.c = (matrix.c * a1) + (matrix.d * c1);
-        this.d = (matrix.c * b1) + (matrix.d * d1);
-
-        this.tx = (matrix.tx * a1) + (matrix.ty * c1) + this.tx;
-        this.ty = (matrix.tx * b1) + (matrix.ty * d1) + this.ty;
-
-        return this;
-    }
-
-    /**
-     * Sets the matrix based on all the available properties
-     *
-     * @param {number} x - Position on the x axis
-     * @param {number} y - Position on the y axis
-     * @param {number} pivotX - Pivot on the x axis
-     * @param {number} pivotY - Pivot on the y axis
-     * @param {number} scaleX - Scale on the x axis
-     * @param {number} scaleY - Scale on the y axis
-     * @param {number} rotation - Rotation in radians
-     * @param {number} skewX - Skew on the x axis
-     * @param {number} skewY - Skew on the y axis
-     * @return {PIXI.Matrix} This matrix. Good for chaining method calls.
-     */
-    setTransform(x, y, pivotX, pivotY, scaleX, scaleY, rotation, skewX, skewY) {
-        this.a = Math.cos(rotation + skewY) * scaleX;
-        this.b = Math.sin(rotation + skewY) * scaleX;
-        this.c = -Math.sin(rotation - skewX) * scaleY;
-        this.d = Math.cos(rotation - skewX) * scaleY;
-
-        this.tx = x - ((pivotX * this.a) + (pivotY * this.c));
-        this.ty = y - ((pivotX * this.b) + (pivotY * this.d));
-
-        return this;
-    }
-
-    /**
-     * Prepends the given Matrix to this Matrix.
-     *
-     * @param {PIXI.Matrix} matrix - The matrix to prepend
-     * @return {PIXI.Matrix} This matrix. Good for chaining method calls.
-     */
-    prepend(matrix) {
-        const tx1 = this.tx;
-
-        if (matrix.a !== 1 || matrix.b !== 0 || matrix.c !== 0 || matrix.d !== 1) {
-            const a1 = this.a;
-            const c1 = this.c;
-
-            this.a = (a1 * matrix.a) + (this.b * matrix.c);
-            this.b = (a1 * matrix.b) + (this.b * matrix.d);
-            this.c = (c1 * matrix.a) + (this.d * matrix.c);
-            this.d = (c1 * matrix.b) + (this.d * matrix.d);
-        }
-
-        this.tx = (tx1 * matrix.a) + (this.ty * matrix.c) + matrix.tx;
-        this.ty = (tx1 * matrix.b) + (this.ty * matrix.d) + matrix.ty;
-
-        return this;
-    }
-
-    /**
-     * Decomposes the matrix (x, y, scaleX, scaleY, and rotation) and sets the properties on to a transform.
-     *
-     * @param {PIXI.Transform|PIXI.TransformStatic} transform - The transform to apply the properties to.
-     * @return {PIXI.Transform|PIXI.TransformStatic} The transform with the newly applied properties
-     */
-    decompose(transform) {
-        // sort out rotation / skew..
-        const a = this.a;
-        const b = this.b;
-        const c = this.c;
-        const d = this.d;
-
-        const skewX = -Math.atan2(-c, d);
-        const skewY = Math.atan2(b, a);
-
-        const delta = Math.abs(skewX + skewY);
-
-        if (delta < 0.00001 || Math.abs(PI_2 - delta) < 0.00001) {
-            transform.rotation = skewY;
-
-            if (a < 0 && d >= 0) {
-                transform.rotation += (transform.rotation <= 0) ? Math.PI : -Math.PI;
-            }
-
-            transform.skew.x = transform.skew.y = 0;
-        }
-        else {
-            transform.rotation = 0;
-            transform.skew.x = skewX;
-            transform.skew.y = skewY;
-        }
-
-        // next set scale
-        transform.scale.x = Math.sqrt((a * a) + (b * b));
-        transform.scale.y = Math.sqrt((c * c) + (d * d));
-
-        // next set position
-        transform.position.x = this.tx;
-        transform.position.y = this.ty;
-
-        return transform;
-    }
-
-    /**
-     * Inverts this matrix
-     *
-     * @return {PIXI.Matrix} This matrix. Good for chaining method calls.
-     */
-    invert() {
-        const a1 = this.a;
-        const b1 = this.b;
-        const c1 = this.c;
-        const d1 = this.d;
-        const tx1 = this.tx;
-        const n = (a1 * d1) - (b1 * c1);
-
-        this.a = d1 / n;
-        this.b = -b1 / n;
-        this.c = -c1 / n;
-        this.d = a1 / n;
-        this.tx = ((c1 * this.ty) - (d1 * tx1)) / n;
-        this.ty = -((a1 * this.ty) - (b1 * tx1)) / n;
-
-        return this;
-    }
-
-    /**
-     * Resets this Matix to an identity (default) matrix.
-     *
-     * @return {PIXI.Matrix} This matrix. Good for chaining method calls.
-     */
-    identity() {
-        this.a = 1;
-        this.b = 0;
-        this.c = 0;
-        this.d = 1;
-        this.tx = 0;
-        this.ty = 0;
-
-        return this;
-    }
-
-    /**
-     * Creates a new Matrix object with the same values as this one.
-     *
-     * @return {PIXI.Matrix} A copy of this matrix. Good for chaining method calls.
-     */
-    clone() {
-        const matrix = new Matrix();
-
-        matrix.a = this.a;
-        matrix.b = this.b;
-        matrix.c = this.c;
-        matrix.d = this.d;
-        matrix.tx = this.tx;
-        matrix.ty = this.ty;
-
-        return matrix;
-    }
-
-    /**
-     * Changes the values of the given matrix to be the same as the ones in this matrix
-     *
-     * @param {PIXI.Matrix} matrix - The matrix to copy from.
-     * @return {PIXI.Matrix} The matrix given in parameter with its values updated.
-     */
-    copy(matrix) {
-        matrix.a = this.a;
-        matrix.b = this.b;
-        matrix.c = this.c;
-        matrix.d = this.d;
-        matrix.tx = this.tx;
-        matrix.ty = this.ty;
-
-        return matrix;
-    }
-
-    /**
-     * A default (identity) matrix
-     *
-     * @static
-     * @const
-     */
-    static get IDENTITY() {
-        return new Matrix();
-    }
-
-    /**
-     * A temp matrix
-     *
-     * @static
-     * @const
-     */
-    static get TEMP_MATRIX() {
-        return new Matrix();
-    }
-}
-
 class PixelLightFilter extends PIXI.Filter {
-    constructor(bumpMapSprite, fragSrc, height, lightColor, lightCoord, scale) {
-        const maskMatrix = new Matrix();
-        bumpMapSprite.renderable = false;
+    constructor(fragSrc, uniforms) {
         super(null, fragSrc);
-
-        this.maskSprite = bumpMapSprite;
-        this.maskMatrix = maskMatrix;
-
-        this.uniforms = {
-            uHeight: height,
-            uLightColor: lightColor,
-            uLightCoord: lightCoord,
-            uScale: scale,
-            uBumpMap: bumpMapSprite._texture,
-            filterMatrix: maskMatrix,
-            dimensions: [0, 0]
-        };
+        this.uniforms = uniforms;
     }
 
     apply(filterManager, input, output) {
-        this.uniforms.filterMatrix = filterManager.calculateSpriteMatrix(this.maskMatrix, this.maskSprite);
-        this.uniforms.dimensions[0] = input.sourceFrame.width
-        this.uniforms.dimensions[1] = input.sourceFrame.height
         filterManager.applyFilter(this, input, output);
-    }
-}
-
-class AmbientLightFilter extends PIXI.Filter {
-    constructor(fragSrc, ambient) {
-        super(null, fragSrc);
-
-        this.uniforms.uAmbient = ambient;
-    }
-
-    apply(filterManager, input, output, clear) {
-        filterManager.applyFilter(this, input, output, clear);
     }
 }
 
 const ambient = [0.2, 0.2, 0.2];
 
-const lights = [
-    { color: [1, 1, 1, 10], coords: [5, 5, 6] }
-];
 
-const lightColors = [
-    1, 1, 1, 2,
-    1, 0, 0, 2,
-    0, 1, 0, 3
-];
-
-const lightCoords = [
-    5, 5, 6,
-    5, 20, 9,
-    22, 40, 0
-];
-
-for (let i = 0; i < 7; i++) {
-    lightColors.push(0);
-    lightColors.push(0);
-    lightColors.push(0);
-    lightColors.push(0);
-
-    lightCoords.push(0);
-    lightCoords.push(0);
-    lightCoords.push(0);
-}
-
-PIXI.loader
-    .add('pixelShader', 'pixelShader.frag')
-    .add('ambientLight', 'ambientLight.frag')
-    .load(onLoaded);
-
-/*const bumpMap = PIXI.Sprite.fromImage("assets/char01_depths.png");
-const sprite = PIXI.Sprite.fromImage("assets/char01.png");
-bumpMap.position.set(50, 50);
-sprite.position.set(50, 50);
-sprite.z = 5;
-bumpMap.scale.x = bumpMap.scale.y = sprite.scale.x = sprite.scale.y = 3;
-APPLICATION.stage.addChild(sprite);*/
 let clickX = 0;
 let clickY = 0;
 
-function onLoaded(loader, res) {
-    const char = createSprite("char01", 100, 100, 3, res);
-    char.drag = false;
-    char.sprite.interactive = true;
-    char.sprite.hitArea = new PIXI.Rectangle(0, 0, 22, 57);
-    char.sprite.on("mousedown", event => {
-        clickX = event.data.global.x - char.sprite.x;
-        clickY = event.data.global.y - char.sprite.y;
-        char.drag = true;
-    });
-    document.addEventListener("mousemove", event => {
-        if (char.drag) {
-            char.sprite.position.set(event.clientX - clickX, event.clientY - clickY);
-            char.bumpMap.position.copy(char.sprite.position);
-        }
-    });
-    document.addEventListener("mouseup", _ => {
-        char.drag = false;
-    });
 
-    const char2 = createSprite("char01", 50, 50, 5, res);
-    char2.drag = false;
-    char2.sprite.interactive = true;
-    char2.sprite.hitArea = new PIXI.Rectangle(0, 0, 22, 57);
-    char2.sprite.on("mousedown", event => {
-        clickX = event.data.global.x - char2.sprite.x;
-        clickY = event.data.global.y - char2.sprite.y;
-        char2.drag = true;
-    });
-    document.addEventListener("mousemove", event => {
-        if (char2.drag) {
-            char2.sprite.position.set(event.clientX - clickX, event.clientY - clickY);
-            char2.bumpMap.position.copy(char2.sprite.position);
-        }
-    });
-    document.addEventListener("mouseup", _ => {
-        char2.drag = false;
-    });
-}
 
-function createSprite(textureName, x, y, z, res) {
-    const sprite = PIXI.Sprite.fromImage("assets/" + textureName + ".png");
-    const bumpMap = PIXI.Sprite.fromImage("assets/" + textureName + "_bumpMap.png");
-    bumpMap.position.set(x, y);
-    sprite.position.set(x, y);
-    sprite.z = z;
-    bumpMap.scale.x = bumpMap.scale.y = sprite.scale.x = sprite.scale.y = z;
-    APPLICATION.stage.addChild(sprite);
+const temp = new PIXI.RenderTexture(width, height);
+const canvas = new PIXI.Sprite(temp);
+APPLICATION.stage.addChild(canvas);
 
-    const ambientLightFilter = new AmbientLightFilter(res.ambientLight.data, ambient);
-    ambientLightFilter.autoFit = false;
-    const filters = [ambientLightFilter];
+const objects = [];
+const lights = [
+    { id: "light1", color: [1, 1, 1, 10], position: [5, 5, 6] }
+];
 
-    for (let light of lights) {
-        const pixelLightFilter = new PixelLightFilter(bumpMap, res.pixelShader.data, z, light.color, light.coords, z);
-        pixelLightFilter.autoFit = false;
-        filters.push(pixelLightFilter);
+/**
+ * char1 essentials
+ */
+const char1 = PIXI.Sprite.fromImage("assets/char01.png");
+char1.bumpMap = PIXI.Texture.fromImage("assets/char01_bumpMap.png");
+char1.position.set(50, 50);
+char1.z = 5;
+char1.id = "char1";
+objects.push(char1);
+
+/**
+ * char1 test
+ */
+char1.drag = false;
+char1.interactive = true;
+char1.hitArea = new PIXI.Rectangle(0, 0, 22, 57);
+
+char1.on("mousedown", event => {
+    clickX = event.data.global.x - char1.x;
+    clickY = event.data.global.y - char1.y;
+    char1.drag = true;
+});
+document.addEventListener("mousemove", event => {
+    if (char1.drag) {
+        char1.position.set(event.clientX - clickX, event.clientY - clickY);
     }
+});
 
-    //sprite.blendMode = PIXI.BLEND_MODES.ADD;
-    sprite.filters = filters;
+/**
+ * test
+ */
+document.addEventListener("mouseup", _ => {
+    char1.drag = false;
+});
 
-    return { sprite, bumpMap };
+function writeShader() {
+    objects.sort((o1, o2) => o1.z - o2.z);
+
+    let lightInitials = false;
+    const uniforms = {
+        dimensions: [width, height]
+    };
+
+    let imports = `
+precision mediump float;
+uniform vec2 dimensions;
+    `;
+
+    let mainStart = `
+void main(void) {
+    vec2 st = gl_FragCoord.xy / dimensions;
+    `;
+
+    let main = `
+    vec3 color = vec3(0.,0.,0.);
+    `;
+
+    /*for (let object of objects) {
+        eval(`uniforms.${object.id}Texture = object.texture;`);
+        eval(`uniforms.${object.id}BumpMap = object.bumpMap;`);
+        eval(`uniforms.${object.id}Position = [object.x, object.y, object.z];`);
+
+        imports += `
+uniform sampler2D ${object.id}Texture;
+uniform sampler2D ${object.id}BumpMap;
+uniform vec3 ${object.id}Position;
+        `;
+
+        main += `
+    vec4 ${object.id}Bump = texture2D(${object.id}BumpMap, gl_FragCoord.xy);
+    vec4 ${object.id}Color = texture2D(${object.id}Texture, gl_FragCoord.xy);
+    float ${object.id}X = ${object.id}Position.x;
+        `;
+
+        for (let light of lights) {
+            if (!lightInitials) {
+                eval(`uniforms.${light.id}Color = light.color;`);
+                eval(`uniforms.${light.id}Position = light.position;`);
+
+                imports += `
+uniform vec4 ${light.id}Color;
+uniform vec3 ${light.id}Position;
+                `;
+
+                main += `
+    vec3 ${light.id}RGB = ${light.id}Color.xyz;
+    float ${light.id}X = ${light.id}Position.x;
+                `;
+            }
+            for (let object of objects) {
+
+            }
+        }
+
+        lightInitials = true;
+    }*/
+
+    const fragSrc = imports + mainStart + main + `
+    gl_FragColor = vec4(color, 1.);
 }
+    `;
+
+    console.log(fragSrc);
+
+    canvas.filters = [new PixelLightFilter(fragSrc, uniforms)];
+}
+
+writeShader();
