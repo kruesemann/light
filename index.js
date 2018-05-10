@@ -1,624 +1,377 @@
 PIXI.settings.SCALE_MODE = PIXI.SCALE_MODES.NEAREST;
-
-const SUPERPIXEL_SIZE = 3;
-const OVERLAP_PADDING = 40; // Needed for fast moving objects, as they tend to cause shadow artifacts. 40 should be sufficient for a maximum movement speed of 100px/tick.
-const BASE_LIGHT_BRIGHTNESS = 0.15;
-
-const BALL_RADIUS = 20;
-const BALL_HEIGHT = 1;
-const BALL_COLOR = "0x994411";
-
-const CHAR_DEPTH = 5;
-
-const DISTANCE_BRIGHTNESS_FACTOR = -0.002;
-const LIGHT_OVERLOAD = 0.5;
-
-const lights = [
-    { x: 250, y: 250, z: 0, radius: 5, color: "0xff0000", intensity: 2 },
-    { x: 375, y: 125, z: 0, radius: 5, color: "0x00ff00", intensity: 2 },
-    { x: 125, y: 375, z: 0, radius: 5, color: "0x0000ff", intensity: 2 },
-    { x: 500, y: 500, z: 45, radius: 5, color: "0xffffff", intensity: 2 },
-    { x: 700, y: 250, z: 45, radius: 5, color: "0xd200ff", intensity: 2 },
-    { x: 700, y: 700, z: 0, radius: 5, color: "0xffffff", intensity: 2 },
-    { x: 1000, y: 700, z: 0, radius: 5, color: "0xffffff", intensity: 2 }
-];
-
-const objects = [];
-const updateQueue = [];
-
-//let counter = 1;
-
-function gameloop(delta) {
-    /*if(charContainer.x >= width) {
-        charContainer.x = counter++;
-        console.log(counter);
-    }
-    else charContainer.x += 100;
-    onObjectUpdate(charContainer);*/
-    while (updateQueue.length > 0) updateContainer(updateQueue.shift());
-}
-
-PIXI.settings.RESOLUTION = window.devicePixelRatio;
-PIXI.settings.SCALE_MODE = PIXI.SCALE_MODES.NEAREST;
-
-const width = window.innerWidth;
-const height = window.innerHeight;
-const depth = 100;
+let width = window.innerWidth;
+let height = window.innerHeight;
+const depth = 500;
 APPLICATION = new PIXI.Application({
     width,
     height,
-    autoResize: true,
     backgroundColor: 0x000000
 });
 
 window.onresize = function resize() {
-    const width = window.innerWidth;
-    const height = window.innerHeight;
+    width = window.innerWidth;
+    height = window.innerHeight;
     APPLICATION.renderer.resize(width, height);
+    APPLICATION.stage.width = width;
+    APPLICATION.stage.height = height;
+    canvasFilter.uniforms.dimensions = [width, height, depth];
 }
 
 document.body.appendChild(APPLICATION.view);
-APPLICATION.ticker.add(gameloop);
 
-const objectLayer = new PIXI.Container();
-APPLICATION.stage.addChild(objectLayer);
+const ambientLight = [255, 255, 255, 0.2];
+
+const canvas = new PIXI.Container(width, height);
+APPLICATION.stage.filterArea = new PIXI.Rectangle(0, 0, width, height);
+let canvasFilter;
+APPLICATION.stage.addChild(canvas);
 
 let clickX = 0;
 let clickY = 0;
 
-/*const size = 2 * SUPERPIXEL_SIZE * BALL_RADIUS + SUPERPIXEL_SIZE;
-const ballTexture = PIXI.RenderTexture.create(size, size);
-const ballSprite = new PIXI.Sprite(ballTexture);
-objectLayer.addChild(ballSprite);
-
-ballSprite.x = 250;
-ballSprite.y = 250;
-ballSprite.z = BALL_HEIGHT;
-ballSprite.radius = BALL_RADIUS;
-ballSprite.color = BALL_COLOR;
-ballSprite.interactive = true;
-ballSprite.drag = false;
-ballSprite.hitArea = new PIXI.Circle(p2spc(BALL_RADIUS), p2spc(BALL_RADIUS), p2sp(BALL_RADIUS));*/
-
-for (let light of lights) {
-    light.reach = Math.round(-100 / DISTANCE_BRIGHTNESS_FACTOR + p2sp(light.radius));
-    const lightSprite = PIXI.Sprite.fromImage("assets/light.png");
-    lightSprite.x = light.x;
-    lightSprite.y = light.y
-    lightSprite.z = light.z;
-    lightSprite.tint = light.color;
-    objectLayer.addChild(lightSprite);
+/**
+ * entities
+ */
+const objects = [];
+function createObject(x, y, z, width, height, name, id) {
+    const object = {
+        id: id ? id : `object${objects.length}`,
+        x: x,
+        y: y,
+        z: z,
+        width: (1 + 4 * z / depth) * width,
+        height: (1 + 4 * z / depth) * height,
+        texture: PIXI.loader.resources[name].texture, //PIXI.Texture.fromImage(`assets/${name}.png`),
+        bumpMap: PIXI.loader.resources[name + "_bumpMap"].texture //PIXI.Texture.fromImage(`assets/${name}_bumpMap.png`)
+    };
+    objects.push(object);
+    return object;
 }
 
-/*ballSprite.on("mousedown", event => {
-    clickX = event.data.global.x - ballSprite.x;
-    clickY = event.data.global.y - ballSprite.y;
-    ballSprite.drag = true;
-});
-
-function genCirclePixels(radius) {
-    const layers = [];
-    for (let x = 0; x <= 2 * radius; x++) {
-        for (let y = 0; y <= 2 * radius; y++) {
-            const z = Math.floor(Math.sqrt(Math.abs(Math.pow(x - radius, 2) + Math.pow(y - radius, 2))));
-            if (z <= radius) layers.push([x, y, Math.floor(Math.sqrt(Math.pow(radius, 2) - Math.pow(z, 2)))]);
-        }
-    }
-    return layers;
+const lights = [];
+function createLight(x, y, z, r, g, b, i, id) {
+    const light = {
+        id: id ? id : `light${lights.length}`,
+        position: [x, y, z],
+        color: [r, g, b, i]
+    };
+    lights.push(light);
+    return light;
 }
 
-ballSprite.layers = genCirclePixels(BALL_RADIUS);*/
+PIXI.loader
+    .add("char01", `assets/char01.png`)
+    .add("char01_bumpMap", `assets/char01_bumpMap.png`)
+    .add("test", `assets/test.png`)
+    .add("test_bumpMap", `assets/test_bumpMap.png`)
+    .load(setup);
 
-function createSpriteContainer(imageName, width, height) {
-    const container = new PIXI.Container();
-    container.w = width;
-    container.h = height;
+function setup() {
+    const char1 = createObject(50, 50, 400, 22, 57, "char01");
+    const char2 = createObject(200, 150, 300, 22, 57, "char01");
+    /*const char3 = createObject(150, 50, 300, 22, 57, "char01");
+    const char4 = createObject(150, 50, 300, 22, 57, "char01");
+    const char5 = createObject(150, 50, 300, 22, 57, "char01");*/
+    const char6 = createObject(150, 50, 250, 50, 50, "test");
 
-    const canvas = document.createElement("canvas");
-    const context = canvas.getContext("2d");
+    createLight(300, 300, 450, 255, 255, 255, 10);
+    //createLight(100, 100, 350, 255, 255, 255, 10);
+    //createLight(500, 500, 250, 255, 255, 255, 8);
+    /*createLight(750, 150, 500, 0, 0, 255, 3);
+    createLight(150, 750, 0, 255, 255, 0, 7);
+    createLight(550, 150, 200, 0, 255, 255, 4);
+    createLight(150, 550, 350, 255, 0, 255, 11);
+    createLight(750, 750, 450, 128, 192, 255, 7);
+    createLight(1050, 150, 500, 192, 255, 128, 1);
+    createLight(1050, 850, 0, 255, 128, 192, 9);*/
 
-    const colorTexture = PIXI.RenderTexture.fromImage("assets/" + imageName + ".png");
-    canvas.width = width;
-    canvas.height = height;
-    try {
-        context.drawImage(colorTexture.baseTexture.source, 0, 0, width, height, 0, 0, width, height);
-    }
-    catch (_) {
-        throw "Texture file not found";
-    }
-    const colorData = context.getImageData(0, 0, width, height).data;
+    /**
+     * test
+     */
+    document.addEventListener("mousedown", event => {
+        objects.sort((o1, o2) => o2.z - o1.z);
+        clickX = event.clientX;
+        clickY = event.clientY;
 
-    const depthTexture = PIXI.RenderTexture.fromImage("assets/" + imageName + "_depths.png");
-    try {
-        context.drawImage(depthTexture.baseTexture.source, 0, 0, width, height, 0, 0, width, height);
-    } catch (_) {
-        throw "Depth texture file not found";
-    }
-    const depthData = context.getImageData(0, 0, width, height).data;
-
-    container.occupancyGrid = [];
-    container.occluders = [];
-
-    for (let n = 0; n < lights.length; n++) container.occluders.push([]);
-
-    for (let i = 0; i < colorData.length; i += 4) {
-        if (colorData[i + 3] == 0) {
-            container.occupancyGrid.push(0);
-            continue;
+        for (let object of objects) {
+            if (clickX >= object.x && clickY >= object.y && clickX <= object.x + object.width && clickY <= object.y + object.height) {
+                clickX -= object.x;
+                clickY -= object.y;
+                object.drag = true;
+                break;
+            }
         }
-        container.occupancyGrid.push(1);
-
-        const superPixelTexture = new PIXI.Graphics();
-        superPixelTexture.beginFill(0xffffff);
-        superPixelTexture.drawRect(0, 0, SUPERPIXEL_SIZE, SUPERPIXEL_SIZE);
-        superPixelTexture.endFill();
-
-        const superPixel = new PIXI.Sprite(APPLICATION.renderer.generateTexture(superPixelTexture));
-        superPixel.baseColor = rgb2html([colorData[i], colorData[i + 1], colorData[i + 2]]);
-        superPixel.x = (Math.floor(i / 4) % width) * SUPERPIXEL_SIZE;
-        superPixel.y = Math.floor(Math.floor(i / 4) / width) * SUPERPIXEL_SIZE;
-        superPixel.z = depthData[i] / 36;
-        superPixel.normals = [[0, 0, 0]];
-
-        switch (depthData[i + 1]) {
-            case 0:
-                superPixel.normals[0][1] = -1;
+    });
+    document.addEventListener("mousemove", event => {
+        for (let object of objects) {
+            if (object.drag) {
+                object.x = event.clientX - clickX;
+                object.y = event.clientY - clickY;
+                eval(`canvasFilter.uniforms.${object.id}Position = [object.x, object.y, object.z];`);
                 break;
-            case 36:
-                superPixel.normals[0][1] = -1;
-                superPixel.normals[0][2] = 1;
-                break;
-            case 72:
-                superPixel.normals[0][2] = 1;
-                break;
-            case 108:
-                superPixel.normals[0][1] = 1;
-                superPixel.normals[0][2] = 1;
-                break;
-            case 144:
-                superPixel.normals[0][1] = 1;
-                break;
-            case 252:
-                superPixel.normals[0][1] = -1;
-                superPixel.normals[0][2] = 1;
-                superPixel.normals.push([0, -1, -1]);
-                break;
-            default:
-                console.log(depthData[i + 1]);
-                throw "Unexpected value in depth texture!";
+            }
         }
-        switch (depthData[i + 2]) {
-            case 0:
-                superPixel.normals[0][0] = -1;
+    });
+    document.addEventListener("mouseup", _ => {
+        for (let object of objects) {
+            if (object.drag) {
+                object.drag = false;
                 break;
-            case 36:
-                superPixel.normals[0][0] = -1;
-                superPixel.normals[0][2] = 1;
-                break;
-            case 72:
-                superPixel.normals[0][2] = 1;
-                break;
-            case 108:
-                superPixel.normals[0][0] = 1;
-                superPixel.normals[0][2] = 1;
-                break;
-            case 144:
-                superPixel.normals[0][0] = 1;
-                break;
-            case 252:
-                if (superPixel.normals.length == 1) {
-                    superPixel.normals[0][0] = -1;
-                    superPixel.normals[0][2] = 1;
+            }
+        }
+    });
+    window.addEventListener("keydown", event => {
+        function enterFullscreen() {
+            if (document.documentElement.requestFullscreen) {
+                document.documentElement.requestFullscreen();
+            } else if (document.documentElement.mozRequestFullScreen) {
+                document.documentElement.mozRequestFullScreen();
+            } else if (document.documentElement.msRequestFullscreen) {
+                document.documentElement.msRequestFullscreen();
+            } else if (document.documentElement.webkitRequestFullscreen) {
+                document.documentElement.webkitRequestFullscreen();
+            }
+        }
+
+        function exitFullscreen() {
+            if (document.exitFullscreen) {
+                document.exitFullscreen();
+            } else if (document.mozCancelFullScreen) {
+                document.mozCancelFullScreen();
+            } else if (document.webkitExitFullscreen) {
+                document.webkitExitFullscreen();
+            }
+        }
+        if (event.keyCode == 122) {
+            if (
+                (document.fullScreenElement && document.fullScreenElement !== null) ||
+                (document.mozFullScreen || document.webkitIsFullScreen)
+            ) {
+                exitFullscreen();
+            } else {
+                enterFullscreen();
+            }
+            event.preventDefault();
+        }
+    });
+
+    updateShader();
+
+    APPLICATION.ticker.add(gameloop);
+}
+
+function updateShader() {
+    let lightInitials = false;
+    const uniforms = {};
+    uniforms.dimensions = { type: 'vec3', value: [width, height, depth] };
+    uniforms.ambientLight = { type: 'vec4', value: ambientLight };
+
+    let imports = `
+precision mediump float;
+uniform vec3 dimensions;
+uniform vec4 ambientLight;
+    `;
+
+    let mainStart = `
+bool hit(in vec2 xy, in vec2 pos, in vec2 dims) {
+    return xy.x >= pos.x && xy.y >= pos.y && xy.x <= pos.x + dims.x && xy.y <= pos.y + dims.y;
+}
+
+void main(void) {
+    vec2 xy = vec2(gl_FragCoord.x, dimensions.y - gl_FragCoord.y);
+    `;
+
+    let main = `
+    gl_FragColor = vec4(0., 0., 0., 1.);
+    float maxZ = -1.;
+    `;
+
+    for (let object of objects) {
+        eval(`uniforms.${object.id}Texture = { type: 'sampler2D', value: object.texture };`);
+        eval(`uniforms.${object.id}BumpMap = { type: 'sampler2D', value: object.bumpMap };`);
+        eval(`uniforms.${object.id}Position = { type: 'vec3', value: [object.x, object.y, object.z] };`);
+        eval(`uniforms.${object.id}Dimensions = { type: 'vec2', value: [object.width, object.height] };`);
+
+        imports += `
+uniform sampler2D ${object.id}Texture;
+uniform sampler2D ${object.id}BumpMap;
+uniform vec3 ${object.id}Position;
+uniform vec2 ${object.id}Dimensions;
+        `;
+
+        main += `
+    if (hit(xy, ${object.id}Position.xy, ${object.id}Dimensions)) {
+        if (maxZ < ${object.id}Position.z) {
+            vec2 ${object.id}TexturePos = (xy - ${object.id}Position.xy)  / (${object.id}Dimensions);
+            vec4 ${object.id}Color = texture2D(${object.id}Texture, ${object.id}TexturePos);
+            if (${object.id}Color.a != 0.) {
+                maxZ = ${object.id}Position.z;
+                vec4 ${object.id}Bump = texture2D(${object.id}BumpMap, ${object.id}TexturePos);
+
+                vec3 ${object.id}Normal = vec3(0., 0., 0.);
+
+                if (${object.id}Bump.x < 95. / 255.) {
+                    ${object.id}Normal.x = -1.;
+                } else if (${object.id}Bump.x < 159. / 255.) {
+                    ${object.id}Normal.x = 0.;
+                } else if (${object.id}Bump.x < 223. / 255.) {
+                    ${object.id}Normal.x = 1.;
                 } else {
-                    superPixel.normals.push([-1, 0, 1]);
+                    ${object.id}Normal.x = 2.;
                 }
-                superPixel.normals.push([-1, 0, -1]);
-                break;
-            default:
-                console.log(depthData[i + 2]);
-                throw "Unexpected value in depth texture!";
-        }
-
-        const norm = Math.sqrt(metric(superPixel.normals[0][0], superPixel.normals[0][1], superPixel.normals[0][2], 0, 0, 0));
-
-        for (let normal of superPixel.normals) {
-            normal[0] /= norm;
-            normal[1] /= norm;
-            normal[2] /= norm;
-        }
-
-        container.addChild(superPixel);
-    }
-
-    objectLayer.addChild(container);
-    objects.push(container);
-
-    return container;
-}
-
-const charContainer = createSpriteContainer("char01", 22, 57);
-charContainer.x = 400;
-charContainer.y = 400;
-charContainer.z = CHAR_DEPTH;
-charContainer.scale.x = charContainer.scale.y = 1 + charContainer.z / depth;
-charContainer.interactive = true;
-charContainer.drag = false;
-charContainer.hitArea = new PIXI.Rectangle(0, 0, p2sp(22), p2sp(57));
-charContainer.on("mousedown", event => {
-    clickX = event.data.global.x - charContainer.x;
-    clickY = event.data.global.y - charContainer.y;
-    charContainer.drag = true;
-});
-
-const test = createSpriteContainer("char01", 22, 57);
-test.x = 470;
-test.y = 420;
-test.z = 20;
-test.scale.x = test.scale.y = 1 + test.z / depth;
-test.interactive = true;
-test.drag = false;
-test.hitArea = new PIXI.Rectangle(0, 0, p2sp(22), p2sp(57));
-test.on("mousedown", event => {
-    clickX = event.data.global.x - test.x;
-    clickY = event.data.global.y - test.y;
-    test.drag = true;
-});
-
-const test2 = createSpriteContainer("test", 50, 50);
-test2.x = 375;
-test2.y = 375;
-test2.z = 1;
-test2.scale.x = test2.scale.y = 1 + test2.z / depth;
-
-document.addEventListener("mousemove", event => {
-    /*if (ballSprite.drag) {
-        ballSprite.x = event.clientX - clickX;
-        ballSprite.y = event.clientY - clickY;
-        getOcclusions();
-        updateBall();
-    }*/
-    if (charContainer.drag) {
-        if (ctrlKey) {
-            charContainer.z = Math.max(0, Math.min(depth - 1, charContainer.z + (event.clientY - clickY - charContainer.y) / 10));
-            charContainer.scale.x = charContainer.scale.y = 1 + charContainer.z / depth;
-        } else {
-            charContainer.x = event.clientX - clickX;
-            charContainer.y = event.clientY - clickY;
-        }
-        //getOcclusions();
-        //updateObjects();
-        onObjectUpdate(charContainer);
-    }
-    if (test.drag) {
-        if (ctrlKey) {
-            test.z = Math.max(0, Math.min(depth - 1, test.z + (event.clientY - clickY - test.y) / 10));
-            test.scale.x = test.scale.y = 1 + test.z / depth;
-        } else {
-            test.x = event.clientX - clickX;
-            test.y = event.clientY - clickY;
-        }
-        //getOcclusions();
-        //updateObjects();
-        onObjectUpdate(test);
-    }
-});
-
-document.addEventListener("mouseup", _ => {
-    //ballSprite.drag = false;
-    charContainer.drag = false;
-    test.drag = false;
-});
-
-let ctrlKey = false;
-
-window.addEventListener("keydown", event => {
-    function enterFullscreen() {
-        if (document.documentElement.requestFullscreen) {
-            document.documentElement.requestFullscreen();
-        } else if (document.documentElement.mozRequestFullScreen) {
-            document.documentElement.mozRequestFullScreen();
-        } else if (document.documentElement.msRequestFullscreen) {
-            document.documentElement.msRequestFullscreen();
-        } else if (document.documentElement.webkitRequestFullscreen) {
-            document.documentElement.webkitRequestFullscreen();
-        }
-    }
-
-    function exitFullscreen() {
-        if (document.exitFullscreen) {
-            document.exitFullscreen();
-        } else if (document.mozCancelFullScreen) {
-            document.mozCancelFullScreen();
-        } else if (document.webkitExitFullscreen) {
-            document.webkitExitFullscreen();
-        }
-    }
-    if (event.keyCode == 122) {
-        if (
-            (document.fullScreenElement && document.fullScreenElement !== null) ||
-            (document.mozFullScreen || document.webkitIsFullScreen)
-        ) {
-            exitFullscreen();
-        } else {
-            enterFullscreen();
-        }
-        event.preventDefault();
-    } else if (event.keyCode == 17) {
-        ctrlKey = true;
-    }
-});
-
-window.addEventListener("keyup", event => {
-    if (event.keyCode == 17) {
-        ctrlKey = false;
-    }
-});
-
-function html2rgb(htmlColor) {
-    return [
-        parseInt(htmlColor.substr(2, 2), 16),
-        parseInt(htmlColor.substr(4, 2), 16),
-        parseInt(htmlColor.substr(6, 2), 16)
-    ];
-}
-
-function dec2hex(dec) {
-    let hex = dec.toString(16);
-    while (hex.length < 2) {
-        hex = "0" + hex;
-    }
-    return hex;
-}
-
-function rgb2html(rgbColor) {
-    return "0x" + dec2hex(rgbColor[0]) + dec2hex(rgbColor[1]) + dec2hex(rgbColor[2]);
-}
-
-function metric(x1, y1, z1, x2, y2, z2) {
-    return Math.pow(x1 - x2, 2) + Math.pow(y1 - y2, 2) + Math.pow(z1 - z2, 2);
-}
-
-function p2spc(pix) {
-    return SUPERPIXEL_SIZE * pix + Math.floor(SUPERPIXEL_SIZE / 2);
-}
-
-function p2sp(pix) {
-    return SUPERPIXEL_SIZE * pix;
-}
-
-function sp2p(superPixel) {
-    return Math.floor(superPixel / SUPERPIXEL_SIZE);
-}
-/*
-const occlusionMap = [];
-
-function initOcclussionMap() {
-    for (let i = 0; i < objects.length; i++) {
-        const row = [];
-        for (let n = 0; n < lights.length; n++) {
-            row.push(0);
-        }
-        occlusionMap.push(row);
-    }
-}*/
-
-function overlap(x1, y1, w1, h1, x2, y2, w2, h2) {
-    if (x1 < x2) {
-        if (y1 < y2) {
-            return x2 < x1 + w1 && y2 < y1 + h1;
-        } else {
-            return x2 < x1 + w1 && y1 < y2 + h2;
-        }
-    } else {
-        if (y1 < y2) {
-            return x1 < x2 + w2 && y2 < y1 + h1;
-        } else {
-            return x1 < x2 + w2 && y1 < y2 + h2;
-        }
-    }
-}
-
-function getOcclusions() {
-    for (let i = 0; i < objects.length; i++) {
-        const o1 = objects[i];
-
-        for (let n = 0; n < lights.length; n++) {
-            const l = lights[n];
-            o1.occluders[n] = [];
-
-            for (let j = 0; j < objects.length; j++) {
-                if (i == j) continue;
-
-                const o2 = objects[j];
-                const lambda = p2sp(o2.z - o1.z) / p2sp(l.z - o1.z);
-
-                if (lambda < 0 || lambda > 1) continue;
-                const x = o1.x + lambda * (l.x - o1.x);
-                const w = o1.x + o1.width + lambda * (l.x - o1.x - o1.width) - x;
-                const y = o1.y + lambda * (l.y - o1.y);
-                const h = o1.y + o1.height + lambda * (l.y - o1.y - o1.height) - y;
-
-                if (overlap(
-                    x - OVERLAP_PADDING,
-                    y - OVERLAP_PADDING,
-                    w + 2 * OVERLAP_PADDING,
-                    h + 2 * OVERLAP_PADDING,
-                    o2.x - OVERLAP_PADDING,
-                    o2.y - OVERLAP_PADDING,
-                    o2.width + 2 * OVERLAP_PADDING,
-                    o2.height + 2 * OVERLAP_PADDING
-                )) {
-                    o1.occluders[n].push(j);
-                    //o2.occluded.push(i);
-                    updateQueue.push(o1);
+            
+                if (${object.id}Bump.y < 95. / 255.) {
+                    ${object.id}Normal.y = -1.;
+                } else if (${object.id}Bump.y < 159. / 255.) {
+                    ${object.id}Normal.y = 0.;
+                } else if (${object.id}Bump.y < 223. / 255.) {
+                    ${object.id}Normal.y = 1.;
+                } else {
+                    ${object.id}Normal.y = 2.;
                 }
+
+                if (${object.id}Bump.z < 95. / 255.) {
+                    ${object.id}Normal.z = -1.;
+                } else if (${object.id}Bump.z < 159. / 255.) {
+                    ${object.id}Normal.z = 0.;
+                } else if (${object.id}Bump.z < 223. / 255.) {
+                    ${object.id}Normal.z = 1.;
+                } else {
+                    ${object.id}Normal.z = 2.;
+                }
+
+                float ${object.id}Norm = length(${object.id}Normal);
+
+                vec3 ${object.id}RGB = vec3(0., 0., 0.);
+        `;
+
+        for (let light of lights) {
+            if (!lightInitials) {
+                eval(`uniforms.${light.id}Color = { type: 'vec4', value: light.color };`);
+                eval(`uniforms.${light.id}Position = { type: 'vec3', value: light.position };`);
+
+                imports += `
+uniform vec4 ${light.id}Color;
+uniform vec3 ${light.id}Position;
+                `;
+            }
+
+            main += `
+                bool ${object.id}${light.id}Occluded = false;
+            `;
+
+            for (let occluder of objects) {
+                if (occluder.id == object.id) continue;
+                main += `
+                if (!${object.id}${light.id}Occluded) {
+                    float ${object.id}${occluder.id}Lambda = (${object.id}Position.z - ${light.id}Position.z) / (${occluder.id}Position.z - ${light.id}Position.z);
+
+                    if (${object.id}${occluder.id}Lambda > 1.) {
+                        vec2 ${object.id}${occluder.id}XY = floor(${light.id}Position.xy + (xy - ${light.id}Position.xy) / ${object.id}${occluder.id}Lambda - ${occluder.id}Position.xy);
+
+                        if (hit(${object.id}${occluder.id}XY, vec2(0., 0.), ${occluder.id}Dimensions)) {
+                            if (texture2D(${occluder.id}Texture, ${object.id}${occluder.id}XY / ${occluder.id}Dimensions).a != 0.) {
+                                ${object.id}${light.id}Occluded = true;
+                            }
+                        }
+                    }
+                }
+                `;
+            }
+
+            main += `
+                if (!${object.id}${light.id}Occluded) {
+                    vec3 ${object.id}${light.id}Ray = vec3(${light.id}Position.xy - xy, ${light.id}Position.z - ${object.id}Position.z - ${object.id}Bump.w / 36. * (1. + ${object.id}Position.z / dimensions.z));
+                    float ${object.id}${light.id}Norm = length(${object.id}${light.id}Ray);
+
+                    float ${object.id}${light.id}SP = 0.;
+                    if (${object.id}${light.id}Norm > 0.) {
+                        if (${object.id}Normal.x != 2.) {
+                            if (${object.id}Normal.y != 2.) {
+                                if (${object.id}Normal.z != 2.) {
+                                    ${object.id}${light.id}SP = dot(${object.id}Normal / ${object.id}Norm, ${object.id}${light.id}Ray / ${object.id}${light.id}Norm);
+                                } else {
+                                    ${object.id}Norm = length(vec3(${object.id}Normal.xy, 1.));
+                                    if (${object.id}Norm > 0.) {
+                                        ${object.id}${light.id}SP = dot(${object.id}Normal.xy, ${object.id}${light.id}Ray.xy / ${object.id}${light.id}Norm) + abs(${object.id}${light.id}Ray.z) / ${object.id}${light.id}Norm;
+                                        ${object.id}${light.id}SP /= ${object.id}Norm;
+                                    }
+                                }
+                            } else {
+                                if (${object.id}Normal.z != 2.) {
+                                    ${object.id}Norm = length(vec3(${object.id}Normal.xz, 1.));
+                                    if (${object.id}Norm > 0.) {
+                                        ${object.id}${light.id}SP = dot(${object.id}Normal.xz, ${object.id}${light.id}Ray.xz / ${object.id}${light.id}Norm) + abs(${object.id}${light.id}Ray.y) / ${object.id}${light.id}Norm;
+                                        ${object.id}${light.id}SP /= ${object.id}Norm;
+                                    }
+                                } else {
+                                    ${object.id}Norm = length(vec3(${object.id}Normal.x, 1., 1.));
+                                    if (${object.id}Norm > 0.) {
+                                        ${object.id}${light.id}SP = ${object.id}Normal.x * ${object.id}${light.id}Ray.x / ${object.id}${light.id}Norm + (abs(${object.id}${light.id}Ray.y) + abs(${object.id}${light.id}Ray.z)) / ${object.id}${light.id}Norm;
+                                        ${object.id}${light.id}SP /= ${object.id}Norm;
+                                    }
+                                }
+                            }
+                        } else {
+                            if (${object.id}Normal.y != 2.) {
+                                if (${object.id}Normal.z != 2.) {
+                                    ${object.id}Norm = length(vec3(${object.id}Normal.yz, 1.));
+                                    if (${object.id}Norm > 0.) {
+                                        ${object.id}${light.id}SP = dot(${object.id}Normal.yz, ${object.id}${light.id}Ray.yz / ${object.id}${light.id}Norm) + abs(${object.id}${light.id}Ray.x) / ${object.id}${light.id}Norm;
+                                        ${object.id}${light.id}SP /= ${object.id}Norm;
+                                    }
+                                } else {
+                                    ${object.id}Norm = length(vec3(${object.id}Normal.y, 1., 1.));
+                                    if (${object.id}Norm > 0.) {
+                                        ${object.id}${light.id}SP = ${object.id}Normal.y * ${object.id}${light.id}Ray.y / ${object.id}${light.id}Norm + (abs(${object.id}${light.id}Ray.x) + abs(${object.id}${light.id}Ray.z)) / ${object.id}${light.id}Norm;
+                                        ${object.id}${light.id}SP /= ${object.id}Norm;
+                                    }
+                                }
+                            } else {
+                                if (${object.id}Normal.z != 2.) {
+                                    ${object.id}Norm = length(vec3(${object.id}Normal.z, 1., 1.));
+                                    if (${object.id}Norm > 0.) {
+                                        ${object.id}${light.id}SP = ${object.id}Normal.z * ${object.id}${light.id}Ray.z / ${object.id}${light.id}Norm + (abs(${object.id}${light.id}Ray.x) + abs(${object.id}${light.id}Ray.y)) / ${object.id}${light.id}Norm;
+                                        ${object.id}${light.id}SP /= ${object.id}Norm;
+                                    }
+                                } else {
+                                    ${object.id}${light.id}SP = 1.;
+                                }
+                            }
+                        }
+                    }
+
+                    float ${object.id}${light.id}Brightness = 0.;
+                    if (${object.id}${light.id}SP > 0.) {
+                        ${object.id}${light.id}Brightness = 25. * ${light.id}Color.a / ${object.id}${light.id}Norm * ${object.id}${light.id}SP;
+                    }
+
+                    ${object.id}RGB += ${object.id}${light.id}Brightness * ${light.id}Color.rgb / 255.;
+                }
+            `;
+        }
+
+        main += `
+                vec3 ${object.id}Over = vec3(max(vec3(0.), ${object.id}RGB - vec3(1.)));
+                gl_FragColor = vec4(min(vec3(1.), max(ambientLight.rgb / 255. * ambientLight.a, min(vec3(1.),${object.id}RGB)) * ${object.id}Color.rgb + .1 * ${object.id}Over), ${object.id}Color.a);
             }
         }
     }
-}
-
-function getColor(absPoint, normals, radius, center, baseColor, object) {
-    let [r, g, b] = [0, 0, 0];
-    for (let n = 0; n < lights.length; n++) {
-        const light = lights[n];
-
-        const dist = Math.max(0, metric(
-            absPoint[0],
-            absPoint[1],
-            absPoint[2],
-            light.x,
-            light.y,
-            p2spc(light.z)
-        ));
-        if (light.reach < dist) continue;
-
-        if (object.occluders[n].length > 0) {
-            let occluded = false;
-            for (let index of object.occluders[n]) {
-                const occluder = objects[index];
-
-                const lambda = p2sp(occluder.z - object.z) / p2sp(light.z - object.z);
-                //const lambda = (p2spc(occluder.z) - absPoint[2]) / (p2spc(light.z) - absPoint[2]);
-                const x = sp2p(Math.floor(absPoint[0] + lambda * (light.x - absPoint[0]) - occluder.x));
-                const y = sp2p(Math.floor(absPoint[1] + lambda * (light.y - absPoint[1]) - occluder.y));
-                if (
-                    x >= 0 &&
-                    x < occluder.w &&
-                    y >= 0 &&
-                    y < occluder.h &&
-                    occluder.occupancyGrid[y * occluder.w + x] == 1
-                ) {
-                    occluded = true;
-                    break;
-                }
-            }
-            if (occluded) continue;
-        }
-        /*if (occlusionMap[objectIndex][n].length > 0) {
-            let occluded = false;
-            for (let index of occlusionMap[objectIndex][n]) {
-                const occluder = objects[index];
-
-                const lambda = p2sp(occluder.z - objects[objectIndex].z) / p2sp(light.z - objects[objectIndex].z);
-                //const lambda = (p2spc(occluder.z) - absPoint[2]) / (p2spc(light.z) - absPoint[2]);
-                const x = sp2p(Math.floor(absPoint[0] + lambda * (light.x - absPoint[0]) - occluder.x));
-                const y = sp2p(Math.floor(absPoint[1] + lambda * (light.y - absPoint[1]) - occluder.y));
-                if (x >= 0 &&
-                    x < occluder.w &&
-                    y >= 0 &&
-                    y < occluder.h &&
-                    occluder.occupancyGrid[y * occluder.w + x] == 1) {
-                    occluded = true;
-                    break;
-                }
-            }
-            if (occluded) continue;
-        }*/
-
-        let lX = light.x - center[0];
-        let lY = light.y - center[1];
-        let lZ = p2spc(light.z) - center[2];
-        let sPmax = 0;
-
-        for (let normal of normals) {
-            const sP = normal[0] * lX + normal[1] * lY + normal[2] * lZ;
-            sPmax = sPmax < sP ? sP : sPmax;
-        }
-        if (sPmax < radius) continue;
-
-        const rDash = sPmax - radius;
-        const intensity = Math.sqrt(rDash / Math.sqrt(dist));
-        const brightness = Math.max(0, DISTANCE_BRIGHTNESS_FACTOR * (dist - p2sp(light.radius)) + 100) * intensity;
-
-        const rgbLightColor = html2rgb(light.color);
-        r += rgbLightColor[0] * brightness * light.intensity / 100;
-        g += rgbLightColor[1] * brightness * light.intensity / 100;
-        b += rgbLightColor[2] * brightness * light.intensity / 100;
+        `;
+        lightInitials = true;
     }
 
-    let overR = Math.max(0, r - 255);
-    let overG = Math.max(0, g - 255);
-    let overB = Math.max(0, b - 255);
-    r += LIGHT_OVERLOAD * (overG + overB);
-    g += LIGHT_OVERLOAD * (overR + overB);
-    b += LIGHT_OVERLOAD * (overR + overG);
+    const fragSrc = imports + mainStart + main + `
+}
+    `;
 
-    let rgbBaseColor = html2rgb(baseColor);
-
-    return rgb2html([
-        Math.max(Math.min(255, Math.round(rgbBaseColor[0] / 255 * r)), Math.round(rgbBaseColor[0] * BASE_LIGHT_BRIGHTNESS)),
-        Math.max(Math.min(255, Math.round(rgbBaseColor[1] / 255 * g)), Math.round(rgbBaseColor[1] * BASE_LIGHT_BRIGHTNESS)),
-        Math.max(Math.min(255, Math.round(rgbBaseColor[2] / 255 * b)), Math.round(rgbBaseColor[2] * BASE_LIGHT_BRIGHTNESS)),
-    ]);
+    canvasFilter = new PIXI.Filter(null, fragSrc, uniforms);
+    APPLICATION.stage.filters = [canvasFilter];
 }
 
-/*function updateBall() {
-    const ball = new PIXI.Graphics();
-    for (let point of ballSprite.layers) {
-        let nX = p2spc(point[0] - ballSprite.radius);
-        let nY = p2spc(point[1] - ballSprite.radius);
-        let nZ = p2spc(point[2]);
-        const norm = Math.sqrt(metric(nX, nY, nZ, 0, 0, 0));
-        nX /= norm;
-        nY /= norm;
-        nZ /= norm;
-
-        const color = getColor(
-            [p2spc(point[0]) + ballSprite.x,
-            p2spc(point[1]) + ballSprite.y,
-            p2spc(point[2] + ballSprite.z)],
-            [[nX, nY, nZ]],
-            norm,
-            [(ballSprite.x + p2spc(ballSprite.radius)),
-            (ballSprite.y + p2spc(ballSprite.radius)),
-            p2spc(ballSprite.z + ballSprite.radius)],
-            ballSprite.color
-        );
-        ball.beginFill(color);
-        ball.drawRect(p2sp(point[0]), p2sp(point[1]), SUPERPIXEL_SIZE, SUPERPIXEL_SIZE);
-        ball.endFill();
-    }
-    APPLICATION.renderer.clearBeforeRender = false;
-    APPLICATION.renderer.render(ball, ballTexture);
-    APPLICATION.renderer.clearBeforeRender = true;
-}*/
-
-function updateContainer(container) {
-    for (let superPixel of container.children) {
-        const centerX = container.x + superPixel.x - p2spc(superPixel.normals[0][0]);
-        const centerY = container.y + superPixel.y - p2spc(superPixel.normals[0][1]);
-        const centerZ = p2spc(container.z + superPixel.z - superPixel.normals[0][2]);
-        const color = getColor(
-            [
-                container.x + superPixel.x,
-                container.y + superPixel.y,
-                p2spc(container.z + superPixel.z)
-            ],
-            superPixel.normals,
-            1,
-            [centerX, centerY, centerZ],
-            superPixel.baseColor,
-            container
-        );
-        superPixel.tint = color;
-    }
+function gameloop(delta) {
+    //char1.x = char1.x > width ? -100 : char1.x + 10;
+    //canvasFilter.uniforms.char1Position = [char1.position.x, char1.position.y, char1.z];
+    //char2.x = char2.x > width ? -100 : char2.x + 10;
+    //canvasFilter.uniforms.char1Position = [char2.position.x, char2.position.y, char2.z];
 }
-
-function onObjectUpdate(object) {
-    //object.occluded = [];
-    getOcclusions();
-    updateQueue.push(object);
-    //updateContainer(object);
-    //for (let occludedIndex of object.occluded) updateContainer(objects[occludedIndex]);
-}
-
-function updateObjects() {
-    getOcclusions();
-    for (let object of objects) updateContainer(object);
-}
-
-objectLayer.children.sort((c1, c2) => c1.z - c2.z);
-//initOcclussionMap();
-//getOcclusions();
-//updateBall();
-updateObjects();
