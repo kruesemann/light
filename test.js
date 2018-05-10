@@ -43,55 +43,55 @@ const lights = [
     { id: "light1", color: [1, 1, 1, 10], position: [5, 5, 6] }
 ];
 
+/**
+     * char1 essentials
+     */
+const char1 = PIXI.Sprite.fromImage("assets/char01.png");
+char1.bumpMap = PIXI.Texture.fromImage("assets/char01_bumpMap.png");
+char1.position.set(50, 50);
+char1.z = 5;
+char1.w = 22;
+char1.h = 57;
+char1.id = "char1";
+objects.push(char1);
+
+/**
+ * char1 test
+ */
+char1.drag = false;
+char1.interactive = true;
+char1.hitArea = new PIXI.Rectangle(0, 0, 22, 57);
+//char1.renderable = false;
+//APPLICATION.stage.addChild(char1);
+
+char1.on("mousedown", event => {
+    clickX = event.data.global.x - char1.x;
+    clickY = event.data.global.y - char1.y;
+    char1.drag = true;
+});
+document.addEventListener("mousemove", event => {
+    if (char1.drag) {
+        char1.position.set(event.clientX - clickX, event.clientY - clickY);
+    }
+});
+
+/**
+ * test
+ */
+document.addEventListener("mouseup", _ => {
+    char1.drag = false;
+});
+
+document.addEventListener("mousedown", event => {
+    console.log(event.clientX, event.clientY);
+});
+
 PIXI.loader
     .add("char1", "assets/char01.png")
     .add("char1_bumpMap", "assets/char01_bumpMap.png")
     .load(setup);
 
-function setup() {
-    /**
-     * char1 essentials
-     */
-    const char1 = PIXI.Sprite.fromImage("assets/char01.png");
-    char1.bumpMap = PIXI.Texture.fromImage("assets/char01_bumpMap.png");
-    char1.position.set(50, 50);
-    char1.z = 5;
-    char1.w = 22;
-    char1.h = 57;
-    char1.id = "char1";
-    objects.push(char1);
-
-    /**
-     * char1 test
-     */
-    char1.drag = false;
-    char1.interactive = true;
-    char1.hitArea = new PIXI.Rectangle(0, 0, 22, 57);
-    //char1.renderable = false;
-    //APPLICATION.stage.addChild(char1);
-
-    char1.on("mousedown", event => {
-        clickX = event.data.global.x - char1.x;
-        clickY = event.data.global.y - char1.y;
-        char1.drag = true;
-    });
-    document.addEventListener("mousemove", event => {
-        if (char1.drag) {
-            char1.position.set(event.clientX - clickX, event.clientY - clickY);
-        }
-    });
-
-    /**
-     * test
-     */
-    document.addEventListener("mouseup", _ => {
-        char1.drag = false;
-    });
-
-    document.addEventListener("mousedown", event => {
-        console.log(event.clientX, event.clientY);
-    });
-
+function setup(loader, res) {
     updateShader();
 }
 
@@ -141,11 +141,6 @@ uniform vec2 ${object.id}Dimensions;
             vec4 ${object.id}Color = texture2D(${object.id}Texture, vTextureCoord);
             float ${object.id}X = ${object.id}Position.x;
             color = ${object.id}Color.rgb;
-            if (texturePos.x >= 10.0 && texturePos.y >= 10.0) {
-                color = vec3(0., 0., 1.);
-            } else {
-                color = vec3(texturePos / dimensions, 0.);
-            }
         `;
 
         for (let light of lights) {
