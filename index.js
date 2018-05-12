@@ -14,6 +14,7 @@ window.onresize = function resize() {
     APPLICATION.renderer.resize(width, height);
     APPLICATION.stage.width = width;
     APPLICATION.stage.height = height;
+    APPLICATION.stage.filterArea = new PIXI.Rectangle(0, 0, width, height);
     canvasFilter.uniforms.dimensions = [width, height, depth];
 }
 
@@ -35,7 +36,7 @@ let clickY = 0;
 const objects = [];
 function createObject(x, y, z, width, height, name, id) {
     const object = {
-        id: id ? id : `object${objects.length}`,
+        id: id ? id : `o${objects.length}`,
         x: x,
         y: y,
         z: z,
@@ -51,7 +52,7 @@ function createObject(x, y, z, width, height, name, id) {
 const lights = [];
 function createLight(x, y, z, r, g, b, i, id) {
     const light = {
-        id: id ? id : `light${lights.length}`,
+        id: id ? id : `l${lights.length}`,
         position: [x, y, z],
         color: [r, g, b, i]
     };
@@ -64,20 +65,22 @@ PIXI.loader
     .add("char01_bumpMap", `assets/char01_bumpMap.png`)
     .add("test", `assets/test.png`)
     .add("test_bumpMap", `assets/test_bumpMap.png`)
+    .add("light", `assets/light.png`)
+    .add("light_bumpMap", `assets/light_bumpMap.png`)
     .load(setup);
 
 function setup() {
     const char1 = createObject(50, 50, 400, 22, 57, "char01");
     const char2 = createObject(200, 150, 300, 22, 57, "char01");
-    /*const char3 = createObject(150, 50, 300, 22, 57, "char01");
-    const char4 = createObject(150, 50, 300, 22, 57, "char01");
-    const char5 = createObject(150, 50, 300, 22, 57, "char01");*/
-    const char6 = createObject(150, 50, 250, 50, 50, "test");
+    const char3 = createObject(900, 300, 249, 11, 11, "light");
+    //const char4 = createObject(150, 50, 300, 22, 57, "char01");
+    //const char5 = createObject(150, 50, 300, 22, 57, "char01");
+    const char6 = createObject(150, 50, 350, 50, 50, "test");
 
     createLight(300, 300, 450, 255, 255, 255, 10);
-    //createLight(100, 100, 350, 255, 255, 255, 10);
-    //createLight(500, 500, 250, 255, 255, 255, 8);
-    /*createLight(750, 150, 500, 0, 0, 255, 3);
+    createLight(900, 300, 250, 255, 255, 0, 10);
+    /*createLight(500, 500, 250, 255, 255, 255, 8);
+    createLight(750, 150, 500, 0, 0, 255, 3);
     createLight(150, 750, 0, 255, 255, 0, 7);
     createLight(550, 150, 200, 0, 255, 255, 4);
     createLight(150, 550, 350, 255, 0, 255, 11);
@@ -92,6 +95,7 @@ function setup() {
         objects.sort((o1, o2) => o2.z - o1.z);
         clickX = event.clientX;
         clickY = event.clientY;
+        //console.log(clickX, clickY);
 
         for (let object of objects) {
             if (clickX >= object.x && clickY >= object.y && clickX <= object.x + object.width && clickY <= object.y + object.height) {
@@ -161,6 +165,7 @@ function setup() {
 }
 
 function updateShader() {
+    objects.sort((o1, o2) => o1.z - o2.z);
     let lightInitials = false;
     const uniforms = {};
     uniforms.dimensions = { type: 'vec3', value: [width, height, depth] };
@@ -183,7 +188,6 @@ void main(void) {
 
     let main = `
     gl_FragColor = vec4(0., 0., 0., 1.);
-    float maxZ = -1.;
     `;
 
     for (let object of objects) {
@@ -201,48 +205,46 @@ uniform vec2 ${object.id}Dimensions;
 
         main += `
     if (hit(xy, ${object.id}Position.xy, ${object.id}Dimensions)) {
-        if (maxZ < ${object.id}Position.z) {
-            vec2 ${object.id}TexturePos = (xy - ${object.id}Position.xy)  / (${object.id}Dimensions);
-            vec4 ${object.id}Color = texture2D(${object.id}Texture, ${object.id}TexturePos);
-            if (${object.id}Color.a != 0.) {
-                maxZ = ${object.id}Position.z;
-                vec4 ${object.id}Bump = texture2D(${object.id}BumpMap, ${object.id}TexturePos);
+        vec2 ${object.id}TexturePos = (xy - ${object.id}Position.xy)  / (${object.id}Dimensions);
+        vec4 ${object.id}Color = texture2D(${object.id}Texture, ${object.id}TexturePos);
+        if (${object.id}Color.a != 0.) {
+            vec4 ${object.id}Bump = texture2D(${object.id}BumpMap, ${object.id}TexturePos);
 
-                vec3 ${object.id}Normal = vec3(0., 0., 0.);
+            vec3 ${object.id}Normal = vec3(0., 0., 0.);
 
-                if (${object.id}Bump.x < 95. / 255.) {
-                    ${object.id}Normal.x = -1.;
-                } else if (${object.id}Bump.x < 159. / 255.) {
-                    ${object.id}Normal.x = 0.;
-                } else if (${object.id}Bump.x < 223. / 255.) {
-                    ${object.id}Normal.x = 1.;
-                } else {
-                    ${object.id}Normal.x = 2.;
-                }
-            
-                if (${object.id}Bump.y < 95. / 255.) {
-                    ${object.id}Normal.y = -1.;
-                } else if (${object.id}Bump.y < 159. / 255.) {
-                    ${object.id}Normal.y = 0.;
-                } else if (${object.id}Bump.y < 223. / 255.) {
-                    ${object.id}Normal.y = 1.;
-                } else {
-                    ${object.id}Normal.y = 2.;
-                }
+            if (${object.id}Bump.x < 95. / 255.) {
+                ${object.id}Normal.x = -1.;
+            } else if (${object.id}Bump.x < 159. / 255.) {
+                ${object.id}Normal.x = 0.;
+            } else if (${object.id}Bump.x < 223. / 255.) {
+                ${object.id}Normal.x = 1.;
+            } else {
+                ${object.id}Normal.x = 2.;
+            }
+        
+            if (${object.id}Bump.y < 95. / 255.) {
+                ${object.id}Normal.y = -1.;
+            } else if (${object.id}Bump.y < 159. / 255.) {
+                ${object.id}Normal.y = 0.;
+            } else if (${object.id}Bump.y < 223. / 255.) {
+                ${object.id}Normal.y = 1.;
+            } else {
+                ${object.id}Normal.y = 2.;
+            }
 
-                if (${object.id}Bump.z < 95. / 255.) {
-                    ${object.id}Normal.z = -1.;
-                } else if (${object.id}Bump.z < 159. / 255.) {
-                    ${object.id}Normal.z = 0.;
-                } else if (${object.id}Bump.z < 223. / 255.) {
-                    ${object.id}Normal.z = 1.;
-                } else {
-                    ${object.id}Normal.z = 2.;
-                }
+            if (${object.id}Bump.z < 95. / 255.) {
+                ${object.id}Normal.z = -1.;
+            } else if (${object.id}Bump.z < 159. / 255.) {
+                ${object.id}Normal.z = 0.;
+            } else if (${object.id}Bump.z < 223. / 255.) {
+                ${object.id}Normal.z = 1.;
+            } else {
+                ${object.id}Normal.z = 2.;
+            }
 
-                float ${object.id}Norm = length(${object.id}Normal);
+            float ${object.id}Norm = 1.;
 
-                vec3 ${object.id}RGB = vec3(0., 0., 0.);
+            vec3 ${object.id}RGB = vec3(0., 0., 0.);
         `;
 
         for (let light of lights) {
@@ -257,104 +259,112 @@ uniform vec3 ${light.id}Position;
             }
 
             main += `
-                bool ${object.id}${light.id}Occluded = false;
+            vec3 ${light.id}RestColor = ${light.id}Color.rgb;
             `;
 
             for (let occluder of objects) {
                 if (occluder.id == object.id) continue;
                 main += `
-                if (!${object.id}${light.id}Occluded) {
-                    float ${object.id}${occluder.id}Lambda = (${object.id}Position.z - ${light.id}Position.z) / (${occluder.id}Position.z - ${light.id}Position.z);
+            if (${light.id}RestColor != vec3(0., 0., 0.)) {
+                float ${object.id}${occluder.id}Lambda = (${object.id}Position.z - ${light.id}Position.z) / (${occluder.id}Position.z - ${light.id}Position.z);
 
-                    if (${object.id}${occluder.id}Lambda > 1.) {
-                        vec2 ${object.id}${occluder.id}XY = floor(${light.id}Position.xy + (xy - ${light.id}Position.xy) / ${object.id}${occluder.id}Lambda - ${occluder.id}Position.xy);
+                if (${object.id}${occluder.id}Lambda > 1.) {
+                    vec2 ${object.id}${occluder.id}XY = floor(${light.id}Position.xy + (xy - ${light.id}Position.xy) / ${object.id}${occluder.id}Lambda - ${occluder.id}Position.xy);
 
-                        if (hit(${object.id}${occluder.id}XY, vec2(0., 0.), ${occluder.id}Dimensions)) {
-                            if (texture2D(${occluder.id}Texture, ${object.id}${occluder.id}XY / ${occluder.id}Dimensions).a != 0.) {
-                                ${object.id}${light.id}Occluded = true;
+                    if (hit(${object.id}${occluder.id}XY, vec2(0., 0.), ${occluder.id}Dimensions)) {
+                        vec4 ${occluder.id}Color = texture2D(${occluder.id}Texture, ${object.id}${occluder.id}XY / ${occluder.id}Dimensions);
+                        if (${occluder.id}Color.a > 0.) {
+                            if (${occluder.id}Color.a < 1.) {
+                                ${light.id}RestColor *= ${occluder.id}Color.rgb;
+                            } else {
+                                ${light.id}RestColor *= 0.;
                             }
                         }
                     }
                 }
+            }
                 `;
             }
 
             main += `
-                if (!${object.id}${light.id}Occluded) {
-                    vec3 ${object.id}${light.id}Ray = vec3(${light.id}Position.xy - xy, ${light.id}Position.z - ${object.id}Position.z - ${object.id}Bump.w / 36. * (1. + ${object.id}Position.z / dimensions.z));
-                    float ${object.id}${light.id}Norm = length(${object.id}${light.id}Ray);
+            if (${light.id}RestColor != vec3(0., 0., 0.)) {
+                vec3 ${object.id}${light.id}Ray = vec3(${light.id}Position.xy - xy, ${light.id}Position.z - ${object.id}Position.z);
+                float ${object.id}${light.id}Norm = length(${object.id}${light.id}Ray);
 
-                    float ${object.id}${light.id}SP = 0.;
-                    if (${object.id}${light.id}Norm > 0.) {
-                        if (${object.id}Normal.x != 2.) {
-                            if (${object.id}Normal.y != 2.) {
-                                if (${object.id}Normal.z != 2.) {
-                                    ${object.id}${light.id}SP = dot(${object.id}Normal / ${object.id}Norm, ${object.id}${light.id}Ray / ${object.id}${light.id}Norm);
-                                } else {
-                                    ${object.id}Norm = length(vec3(${object.id}Normal.xy, 1.));
-                                    if (${object.id}Norm > 0.) {
-                                        ${object.id}${light.id}SP = dot(${object.id}Normal.xy, ${object.id}${light.id}Ray.xy / ${object.id}${light.id}Norm) + abs(${object.id}${light.id}Ray.z) / ${object.id}${light.id}Norm;
-                                        ${object.id}${light.id}SP /= ${object.id}Norm;
-                                    }
+                float ${object.id}${light.id}SP = 0.;
+                if (${object.id}${light.id}Norm > 0.) {
+                    if (${object.id}Normal.x != 2.) {
+                        if (${object.id}Normal.y != 2.) {
+                            if (${object.id}Normal.z != 2.) {
+                                ${object.id}Norm = length(${object.id}Normal);
+                                if (${object.id}Norm > 0.) {
+                                    ${object.id}${light.id}SP = dot(${object.id}Normal, ${object.id}${light.id}Ray);
+                                    ${object.id}${light.id}SP /= ${object.id}Norm * ${object.id}${light.id}Norm;
                                 }
                             } else {
-                                if (${object.id}Normal.z != 2.) {
-                                    ${object.id}Norm = length(vec3(${object.id}Normal.xz, 1.));
-                                    if (${object.id}Norm > 0.) {
-                                        ${object.id}${light.id}SP = dot(${object.id}Normal.xz, ${object.id}${light.id}Ray.xz / ${object.id}${light.id}Norm) + abs(${object.id}${light.id}Ray.y) / ${object.id}${light.id}Norm;
-                                        ${object.id}${light.id}SP /= ${object.id}Norm;
-                                    }
-                                } else {
-                                    ${object.id}Norm = length(vec3(${object.id}Normal.x, 1., 1.));
-                                    if (${object.id}Norm > 0.) {
-                                        ${object.id}${light.id}SP = ${object.id}Normal.x * ${object.id}${light.id}Ray.x / ${object.id}${light.id}Norm + (abs(${object.id}${light.id}Ray.y) + abs(${object.id}${light.id}Ray.z)) / ${object.id}${light.id}Norm;
-                                        ${object.id}${light.id}SP /= ${object.id}Norm;
-                                    }
+                                ${object.id}Norm = length(vec3(${object.id}Normal.xy, 1.));
+                                if (${object.id}Norm > 0.) {
+                                    ${object.id}${light.id}SP = dot(${object.id}Normal.xy, ${object.id}${light.id}Ray.xy) + abs(${object.id}${light.id}Ray.z);
+                                    ${object.id}${light.id}SP /= ${object.id}Norm * ${object.id}${light.id}Norm;
                                 }
                             }
                         } else {
-                            if (${object.id}Normal.y != 2.) {
-                                if (${object.id}Normal.z != 2.) {
-                                    ${object.id}Norm = length(vec3(${object.id}Normal.yz, 1.));
-                                    if (${object.id}Norm > 0.) {
-                                        ${object.id}${light.id}SP = dot(${object.id}Normal.yz, ${object.id}${light.id}Ray.yz / ${object.id}${light.id}Norm) + abs(${object.id}${light.id}Ray.x) / ${object.id}${light.id}Norm;
-                                        ${object.id}${light.id}SP /= ${object.id}Norm;
-                                    }
-                                } else {
-                                    ${object.id}Norm = length(vec3(${object.id}Normal.y, 1., 1.));
-                                    if (${object.id}Norm > 0.) {
-                                        ${object.id}${light.id}SP = ${object.id}Normal.y * ${object.id}${light.id}Ray.y / ${object.id}${light.id}Norm + (abs(${object.id}${light.id}Ray.x) + abs(${object.id}${light.id}Ray.z)) / ${object.id}${light.id}Norm;
-                                        ${object.id}${light.id}SP /= ${object.id}Norm;
-                                    }
+                            if (${object.id}Normal.z != 2.) {
+                                ${object.id}Norm = length(vec3(${object.id}Normal.xz, 1.));
+                                if (${object.id}Norm > 0.) {
+                                    ${object.id}${light.id}SP = dot(${object.id}Normal.xz, ${object.id}${light.id}Ray.xz) + abs(${object.id}${light.id}Ray.y);
+                                    ${object.id}${light.id}SP /= ${object.id}Norm * ${object.id}${light.id}Norm;
                                 }
                             } else {
-                                if (${object.id}Normal.z != 2.) {
-                                    ${object.id}Norm = length(vec3(${object.id}Normal.z, 1., 1.));
-                                    if (${object.id}Norm > 0.) {
-                                        ${object.id}${light.id}SP = ${object.id}Normal.z * ${object.id}${light.id}Ray.z / ${object.id}${light.id}Norm + (abs(${object.id}${light.id}Ray.x) + abs(${object.id}${light.id}Ray.y)) / ${object.id}${light.id}Norm;
-                                        ${object.id}${light.id}SP /= ${object.id}Norm;
-                                    }
-                                } else {
-                                    ${object.id}${light.id}SP = 1.;
+                                ${object.id}Norm = length(vec3(${object.id}Normal.x, 1., 1.));
+                                if (${object.id}Norm > 0.) {
+                                    ${object.id}${light.id}SP = ${object.id}Normal.x * ${object.id}${light.id}Ray.x + abs(${object.id}${light.id}Ray.y) + abs(${object.id}${light.id}Ray.z);
+                                    ${object.id}${light.id}SP /= ${object.id}Norm * ${object.id}${light.id}Norm;
                                 }
                             }
                         }
+                    } else {
+                        if (${object.id}Normal.y != 2.) {
+                            if (${object.id}Normal.z != 2.) {
+                                ${object.id}Norm = length(vec3(${object.id}Normal.yz, 1.));
+                                if (${object.id}Norm > 0.) {
+                                    ${object.id}${light.id}SP = dot(${object.id}Normal.yz, ${object.id}${light.id}Ray.yz) + abs(${object.id}${light.id}Ray.x);
+                                    ${object.id}${light.id}SP /= ${object.id}Norm * ${object.id}${light.id}Norm;
+                                }
+                            } else {
+                                ${object.id}Norm = length(vec3(${object.id}Normal.y, 1., 1.));
+                                if (${object.id}Norm > 0.) {
+                                    ${object.id}${light.id}SP = ${object.id}Normal.y * ${object.id}${light.id}Ray.y + abs(${object.id}${light.id}Ray.x) + abs(${object.id}${light.id}Ray.z);
+                                    ${object.id}${light.id}SP /= ${object.id}Norm * ${object.id}${light.id}Norm;
+                                }
+                            }
+                        } else {
+                            if (${object.id}Normal.z != 2.) {
+                                ${object.id}Norm = length(vec3(${object.id}Normal.z, 1., 1.));
+                                if (${object.id}Norm > 0.) {
+                                    ${object.id}${light.id}SP = ${object.id}Normal.z * ${object.id}${light.id}Ray.z + abs(${object.id}${light.id}Ray.x) + abs(${object.id}${light.id}Ray.y);
+                                    ${object.id}${light.id}SP /= ${object.id}Norm * ${object.id}${light.id}Norm;
+                                }
+                            } else {
+                                ${object.id}${light.id}SP = 1.;
+                            }
+                        }
                     }
-
-                    float ${object.id}${light.id}Brightness = 0.;
-                    if (${object.id}${light.id}SP > 0.) {
-                        ${object.id}${light.id}Brightness = 25. * ${light.id}Color.a / ${object.id}${light.id}Norm * ${object.id}${light.id}SP;
-                    }
-
-                    ${object.id}RGB += ${object.id}${light.id}Brightness * ${light.id}Color.rgb / 255.;
                 }
+
+                float ${object.id}${light.id}Brightness = 0.;
+                if (${object.id}${light.id}SP > 0.) {
+                    ${object.id}${light.id}Brightness = 25. * ${light.id}Color.a / ${object.id}${light.id}Norm * ${object.id}${light.id}SP;
+                }
+
+                ${object.id}RGB += ${object.id}${light.id}Brightness * ${light.id}RestColor / 255.;
+            }
             `;
         }
 
         main += `
-                vec3 ${object.id}Over = vec3(max(vec3(0.), ${object.id}RGB - vec3(1.)));
-                gl_FragColor = vec4(min(vec3(1.), max(ambientLight.rgb / 255. * ambientLight.a, min(vec3(1.),${object.id}RGB)) * ${object.id}Color.rgb + .1 * ${object.id}Over), ${object.id}Color.a);
-            }
+            vec3 ${object.id}Over = vec3(max(vec3(0.), ${object.id}RGB - vec3(1.)));
+            gl_FragColor = vec4(mix(gl_FragColor.rgb, min(vec3(1.), max(ambientLight.rgb / 255. * ambientLight.a, min(vec3(1.),${object.id}RGB)) * ${object.id}Color.rgb + .1 * ${object.id}Over), ${object.id}Color.a), 1.);
         }
     }
         `;
