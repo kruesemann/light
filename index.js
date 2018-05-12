@@ -34,14 +34,15 @@ let clickY = 0;
  * entities
  */
 const objects = [];
-function createObject(x, y, z, width, height, name, id) {
+function createObject(x, y, z, width, height, reflect, name) {
     const object = {
-        id: id ? id : `o${objects.length}`,
+        id: `o${objects.length}`,
         x: x,
         y: y,
         z: z,
         width: (1 + 4 * z / depth) * width,
         height: (1 + 4 * z / depth) * height,
+        reflect: reflect,
         texture: PIXI.loader.resources[name].texture, //PIXI.Texture.fromImage(`assets/${name}.png`),
         bumpMap: PIXI.loader.resources[name + "_bumpMap"].texture //PIXI.Texture.fromImage(`assets/${name}_bumpMap.png`)
     };
@@ -50,9 +51,9 @@ function createObject(x, y, z, width, height, name, id) {
 }
 
 const lights = [];
-function createLight(x, y, z, r, g, b, i, id) {
+function createLight(x, y, z, r, g, b, i) {
     const light = {
-        id: id ? id : `l${lights.length}`,
+        id: `l${lights.length}`,
         position: [x, y, z],
         color: [r, g, b, i]
     };
@@ -70,14 +71,14 @@ PIXI.loader
     .load(setup);
 
 function setup() {
-    const char1 = createObject(50, 50, 400, 22, 57, "char01");
-    const char2 = createObject(200, 150, 300, 22, 57, "char01");
-    const char3 = createObject(900, 300, 249, 11, 11, "light");
+    const char1 = createObject(50, 50, 400, 22, 57, 0.1, "char01");
+    const char2 = createObject(200, 150, 300, 22, 57, 0.1, "char01");
+    const char3 = createObject(900, 300, 249, 11, 11, 1, "light");
     //const char4 = createObject(150, 50, 300, 22, 57, "char01");
     //const char5 = createObject(150, 50, 300, 22, 57, "char01");
-    const char6 = createObject(150, 50, 350, 50, 50, "test");
+    const char6 = createObject(150, 50, 350, 50, 50, 1., "test");
 
-    createLight(300, 300, 450, 255, 255, 255, 10);
+    createLight(300, 300, 450, 255, 255, 255, 20);
     createLight(900, 300, 250, 255, 255, 0, 10);
     /*createLight(500, 500, 250, 255, 255, 255, 8);
     createLight(750, 150, 500, 0, 0, 255, 3);
@@ -195,12 +196,14 @@ void main(void) {
         eval(`uniforms.${object.id}BumpMap = { type: 'sampler2D', value: object.bumpMap };`);
         eval(`uniforms.${object.id}Position = { type: 'vec3', value: [object.x, object.y, object.z] };`);
         eval(`uniforms.${object.id}Dimensions = { type: 'vec2', value: [object.width, object.height] };`);
+        eval(`uniforms.${object.id}Reflect = { type: 'float', value: object.reflect };`);
 
         imports += `
 uniform sampler2D ${object.id}Texture;
 uniform sampler2D ${object.id}BumpMap;
 uniform vec3 ${object.id}Position;
 uniform vec2 ${object.id}Dimensions;
+uniform float ${object.id}Reflect;
         `;
 
         main += `
@@ -364,7 +367,7 @@ uniform vec3 ${light.id}Position;
 
         main += `
             vec3 ${object.id}Over = vec3(max(vec3(0.), ${object.id}RGB - vec3(1.)));
-            gl_FragColor = vec4(mix(gl_FragColor.rgb, min(vec3(1.), max(ambientLight.rgb / 255. * ambientLight.a, min(vec3(1.),${object.id}RGB)) * ${object.id}Color.rgb + .1 * ${object.id}Over), ${object.id}Color.a), 1.);
+            gl_FragColor = vec4(mix(gl_FragColor.rgb, min(vec3(1.), max(ambientLight.rgb / 255. * ambientLight.a, min(vec3(1. + ${object.id}Reflect),${object.id}RGB)) * ${object.id}Color.rgb + .1 * ${object.id}Over), ${object.id}Color.a), 1.);
         }
     }
         `;
