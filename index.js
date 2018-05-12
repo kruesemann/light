@@ -61,7 +61,7 @@ function createLight(x, y, z, r, g, b, i) {
 }
 
 PIXI.loader
-    .add("char_sheet0", `assets/object_sheet0.png`)
+    .add("object_sheet0", `assets/object_sheet0.png`)
     .load(setup);
 
 function setup() {
@@ -165,16 +165,16 @@ function updateShader() {
     const uniforms = {};
     uniforms.dimensions = { type: 'vec3', value: [width, height, depth] };
     uniforms.ambientLight = { type: 'vec4', value: ambientLight };
-    uniforms.charSheet0 = { type: 'sampler2D', value: PIXI.loader.resources["char_sheet0"].texture };
-    uniforms.charSheet0Dims = { type: 'vec2', value: [83, 114] };
+    uniforms.objectSheet0 = { type: 'sampler2D', value: PIXI.loader.resources["object_sheet0"].texture };
+    uniforms.objectSheet0Dims = { type: 'vec2', value: [83, 114] };
 
     let imports = `
 precision mediump float;
 
 uniform vec3 dimensions;
 uniform vec4 ambientLight;
-uniform sampler2D charSheet0;
-uniform vec2 charSheet0Dims;
+uniform sampler2D objectSheet0;
+uniform vec2 objectSheet0Dims;
     `;
 
     let mainStart = `
@@ -205,10 +205,10 @@ uniform vec2 ${object.id}SheetCoord;
 
         main += `
     if (hit(xy, ${object.id}Position.xy, ${object.id}Dimensions.xy * ${object.id}Dimensions.z)) {
-        vec2 ${object.id}TexturePos = ((xy - ${object.id}Position.xy) / ${object.id}Dimensions.z + ${object.id}SheetCoord) / charSheet${object.sheetNumber}Dims;
-        vec4 ${object.id}Color = texture2D(charSheet${object.sheetNumber}, ${object.id}TexturePos);
+        vec2 ${object.id}TexturePos = ((xy - ${object.id}Position.xy) / ${object.id}Dimensions.z + ${object.id}SheetCoord) / objectSheet${object.sheetNumber}Dims;
+        vec4 ${object.id}Color = texture2D(objectSheet${object.sheetNumber}, ${object.id}TexturePos);
         if (${object.id}Color.a != 0.) {
-            vec4 ${object.id}Bump = texture2D(charSheet${object.sheetNumber}, ${object.id}TexturePos + vec2(0., ${object.height}. / charSheet${object.sheetNumber}Dims.y));
+            vec4 ${object.id}Bump = texture2D(objectSheet${object.sheetNumber}, ${object.id}TexturePos + vec2(0., ${object.height}. / objectSheet${object.sheetNumber}Dims.y));
 
             vec3 ${object.id}Normal = vec3(0., 0., 0.);
 
@@ -272,7 +272,7 @@ uniform vec3 ${light.id}Position;
                     vec2 ${object.id}${occluder.id}XY = floor(${light.id}Position.xy + (xy - ${light.id}Position.xy) / ${object.id}${occluder.id}Lambda - ${occluder.id}Position.xy);
 
                     if (hit(${object.id}${occluder.id}XY, vec2(0., 0.), ${occluder.id}Dimensions.xy * ${occluder.id}Dimensions.z)) {
-                        vec4 ${occluder.id}Color = texture2D(charSheet${object.sheetNumber}, (${object.id}${occluder.id}XY / ${occluder.id}Dimensions.z + ${occluder.id}SheetCoord) / charSheet${occluder.sheetNumber}Dims);
+                        vec4 ${occluder.id}Color = texture2D(objectSheet${object.sheetNumber}, (${object.id}${occluder.id}XY / ${occluder.id}Dimensions.z + ${occluder.id}SheetCoord) / objectSheet${occluder.sheetNumber}Dims);
                         if (${occluder.id}Color.a > 0.) {
                             if (${occluder.id}Color.a < 1.) {
                                 ${light.id}RestColor *= ${occluder.id}Color.rgb;
