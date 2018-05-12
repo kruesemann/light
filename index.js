@@ -22,10 +22,8 @@ document.body.appendChild(APPLICATION.view);
 
 const ambientLight = [255, 255, 255, 0.2];
 
-const canvas = new PIXI.Container(width, height);
 APPLICATION.stage.filterArea = new PIXI.Rectangle(0, 0, width, height);
 let canvasFilter;
-APPLICATION.stage.addChild(canvas);
 
 let clickX = 0;
 let clickY = 0;
@@ -34,17 +32,18 @@ let clickY = 0;
  * entities
  */
 const objects = [];
-function createObject(x, y, z, width, height, reflect, name) {
+function createObject(x, y, z, width, height, reflect, sheetCoord, sheetNumber) {
     const object = {
         id: `o${objects.length}`,
         x: x,
         y: y,
         z: z,
-        width: (1 + 4 * z / depth) * width,
-        height: (1 + 4 * z / depth) * height,
+        width: width,
+        height: height,
+        scale: (1 + 4 * z / depth),
         reflect: reflect,
-        texture: PIXI.loader.resources[name].texture, //PIXI.Texture.fromImage(`assets/${name}.png`),
-        bumpMap: PIXI.loader.resources[name + "_bumpMap"].texture //PIXI.Texture.fromImage(`assets/${name}_bumpMap.png`)
+        sheetCoord: sheetCoord,
+        sheetNumber: sheetNumber
     };
     objects.push(object);
     return object;
@@ -62,21 +61,16 @@ function createLight(x, y, z, r, g, b, i) {
 }
 
 PIXI.loader
-    .add("char01", `assets/char01.png`)
-    .add("char01_bumpMap", `assets/char01_bumpMap.png`)
-    .add("test", `assets/test.png`)
-    .add("test_bumpMap", `assets/test_bumpMap.png`)
-    .add("light", `assets/light.png`)
-    .add("light_bumpMap", `assets/light_bumpMap.png`)
+    .add("char_sheet0", `assets/object_sheet0.png`)
     .load(setup);
 
 function setup() {
-    const char1 = createObject(50, 50, 400, 22, 57, 0.1, "char01");
-    const char2 = createObject(200, 150, 300, 22, 57, 0.1, "char01");
-    const char3 = createObject(900, 300, 249, 11, 11, 1, "light");
-    //const char4 = createObject(150, 50, 300, 22, 57, "char01");
-    //const char5 = createObject(150, 50, 300, 22, 57, "char01");
-    const char6 = createObject(150, 50, 350, 50, 50, 1., "test");
+    const char1 = createObject(50, 50, 400, 22, 57, 0.1, [0, 0], 0);
+    const char2 = createObject(200, 150, 300, 22, 57, 0.1, [0, 0], 0);
+    const char3 = createObject(900, 300, 249, 11, 11, 1, [72, 0], 0);
+    //const char4 = createObject(150, 50, 300, 22, 57, 0.1, [0, 0], 0);
+    //const char5 = createObject(150, 50, 300, 22, 57, 0.1, [0, 0], 0);
+    const char6 = createObject(150, 50, 350, 50, 50, 1.0, [22, 0], 0);
 
     createLight(300, 300, 450, 255, 255, 255, 20);
     createLight(900, 300, 250, 255, 255, 0, 10);
@@ -99,7 +93,7 @@ function setup() {
         //console.log(clickX, clickY);
 
         for (let object of objects) {
-            if (clickX >= object.x && clickY >= object.y && clickX <= object.x + object.width && clickY <= object.y + object.height) {
+            if (clickX >= object.x && clickY >= object.y && clickX < object.x + object.width * object.scale && clickY < object.y + object.height * object.scale) {
                 clickX -= object.x;
                 clickY -= object.y;
                 object.drag = true;
@@ -171,16 +165,21 @@ function updateShader() {
     const uniforms = {};
     uniforms.dimensions = { type: 'vec3', value: [width, height, depth] };
     uniforms.ambientLight = { type: 'vec4', value: ambientLight };
+    uniforms.charSheet0 = { type: 'sampler2D', value: PIXI.loader.resources["char_sheet0"].texture };
+    uniforms.charSheet0Dims = { type: 'vec2', value: [83, 114] };
 
     let imports = `
 precision mediump float;
+
 uniform vec3 dimensions;
 uniform vec4 ambientLight;
+uniform sampler2D charSheet0;
+uniform vec2 charSheet0Dims;
     `;
 
     let mainStart = `
 bool hit(in vec2 xy, in vec2 pos, in vec2 dims) {
-    return xy.x >= pos.x && xy.y >= pos.y && xy.x <= pos.x + dims.x && xy.y <= pos.y + dims.y;
+    return xy.x >= pos.x && xy.y >= pos.y && xy.x < pos.x + dims.x && xy.y < pos.y + dims.y;
 }
 
 void main(void) {
@@ -192,26 +191,24 @@ void main(void) {
     `;
 
     for (let object of objects) {
-        eval(`uniforms.${object.id}Texture = { type: 'sampler2D', value: object.texture };`);
-        eval(`uniforms.${object.id}BumpMap = { type: 'sampler2D', value: object.bumpMap };`);
         eval(`uniforms.${object.id}Position = { type: 'vec3', value: [object.x, object.y, object.z] };`);
-        eval(`uniforms.${object.id}Dimensions = { type: 'vec2', value: [object.width, object.height] };`);
+        eval(`uniforms.${object.id}Dimensions = { type: 'vec3', value: [object.width, object.height, object.scale] };`);
         eval(`uniforms.${object.id}Reflect = { type: 'float', value: object.reflect };`);
+        eval(`uniforms.${object.id}SheetCoord = { type: 'vec2', value: object.sheetCoord };`);
 
         imports += `
-uniform sampler2D ${object.id}Texture;
-uniform sampler2D ${object.id}BumpMap;
 uniform vec3 ${object.id}Position;
-uniform vec2 ${object.id}Dimensions;
+uniform vec3 ${object.id}Dimensions;
 uniform float ${object.id}Reflect;
+uniform vec2 ${object.id}SheetCoord;
         `;
 
         main += `
-    if (hit(xy, ${object.id}Position.xy, ${object.id}Dimensions)) {
-        vec2 ${object.id}TexturePos = (xy - ${object.id}Position.xy)  / (${object.id}Dimensions);
-        vec4 ${object.id}Color = texture2D(${object.id}Texture, ${object.id}TexturePos);
+    if (hit(xy, ${object.id}Position.xy, ${object.id}Dimensions.xy * ${object.id}Dimensions.z)) {
+        vec2 ${object.id}TexturePos = ((xy - ${object.id}Position.xy) / ${object.id}Dimensions.z + ${object.id}SheetCoord) / charSheet${object.sheetNumber}Dims;
+        vec4 ${object.id}Color = texture2D(charSheet${object.sheetNumber}, ${object.id}TexturePos);
         if (${object.id}Color.a != 0.) {
-            vec4 ${object.id}Bump = texture2D(${object.id}BumpMap, ${object.id}TexturePos);
+            vec4 ${object.id}Bump = texture2D(charSheet${object.sheetNumber}, ${object.id}TexturePos + vec2(0., ${object.height}. / charSheet${object.sheetNumber}Dims.y));
 
             vec3 ${object.id}Normal = vec3(0., 0., 0.);
 
@@ -274,8 +271,8 @@ uniform vec3 ${light.id}Position;
                 if (${object.id}${occluder.id}Lambda > 1.) {
                     vec2 ${object.id}${occluder.id}XY = floor(${light.id}Position.xy + (xy - ${light.id}Position.xy) / ${object.id}${occluder.id}Lambda - ${occluder.id}Position.xy);
 
-                    if (hit(${object.id}${occluder.id}XY, vec2(0., 0.), ${occluder.id}Dimensions)) {
-                        vec4 ${occluder.id}Color = texture2D(${occluder.id}Texture, ${object.id}${occluder.id}XY / ${occluder.id}Dimensions);
+                    if (hit(${object.id}${occluder.id}XY, vec2(0., 0.), ${occluder.id}Dimensions.xy * ${occluder.id}Dimensions.z)) {
+                        vec4 ${occluder.id}Color = texture2D(charSheet${object.sheetNumber}, (${object.id}${occluder.id}XY / ${occluder.id}Dimensions.z + ${occluder.id}SheetCoord) / charSheet${occluder.sheetNumber}Dims);
                         if (${occluder.id}Color.a > 0.) {
                             if (${occluder.id}Color.a < 1.) {
                                 ${light.id}RestColor *= ${occluder.id}Color.rgb;
