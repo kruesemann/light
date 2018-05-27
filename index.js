@@ -364,7 +364,7 @@ uniform vec3 ${light.id}Position;
 
         main += `
             vec3 ${object.id}Over = vec3(max(vec3(0.), ${object.id}RGB - vec3(1.)));
-            gl_FragColor = vec4(mix(gl_FragColor.rgb, min(vec3(1.), max(ambientLight.rgb / 255. * ambientLight.a, min(vec3(1. + ${object.id}Reflect),${object.id}RGB)) * ${object.id}Color.rgb + .1 * ${object.id}Over), ${object.id}Color.a), 1.);
+            gl_FragColor = vec4(mix(gl_FragColor.rgb * ${object.id}Color.rgb, min(vec3(1.), max(ambientLight.rgb / 255. * ambientLight.a, min(vec3(1. + ${object.id}Reflect),${object.id}RGB)) * ${object.id}Color.rgb + .1 * ${object.id}Over), ${object.id}Color.a), 1.);
         }
     }
         `;
