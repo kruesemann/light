@@ -1,387 +1,586 @@
-PIXI.settings.SCALE_MODE = PIXI.SCALE_MODES.NEAREST;
-let width = window.innerWidth;
-let height = window.innerHeight;
-const depth = 500;
-APPLICATION = new PIXI.Application({
-    width,
-    height,
-    backgroundColor: 0x000000
-});
+const MAXNUM = 16;
+
+const vSrc = `
+attribute vec2 a_sheetVertices;
+attribute float a_objInd;
+
+varying vec3 v_objPos;
+varying vec2 v_sheetPos;
+varying float v_objInd;
+
+void main() {
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    v_objPos = position;
+    v_sheetPos = a_sheetVertices;
+    v_objInd = a_objInd;
+}
+`;
+
+const fSrc = `
+#define MAXNUM ${MAXNUM}
+#define LIGHT_SCALAR 400.0
+#define DISTANCE_EXP 1.5
+
+varying vec3 v_objPos;
+varying vec2 v_sheetPos;
+varying float v_objInd;
+
+uniform vec3 u_dims;
+uniform vec4 u_ambientLight;
+
+uniform sampler2D u_textureSheet;
+uniform sampler2D u_bumpSheet;
+uniform vec2 u_sheetDims;
+
+uniform vec3 u_objPos[MAXNUM];
+uniform vec2 u_objSheetPos[MAXNUM];
+uniform vec3 u_objNormals[MAXNUM];
+uniform vec3 u_objDims[MAXNUM];
+
+uniform vec4 u_lightColors[MAXNUM];
+uniform vec3 u_lightPos[MAXNUM];
+
+vec3 bumpToNormal(vec3 bump) {
+    vec3 normal = vec3(0.0);
+
+    if (bump.x < 95.0 / 255.0) {
+        normal.x = -1.0;
+    } else if (bump.x < 159.0 / 255.0) {
+        normal.x = 0.0;
+    } else if (bump.x < 223.0 / 255.0) {
+        normal.x = 1.0;
+    } else {
+        normal.x = 2.0;
+    }
+
+    if (bump.y < 95.0 / 255.0) {
+        normal.y = 1.0;
+    } else if (bump.y < 159.0 / 255.0) {
+        normal.y = 0.0;
+    } else if (bump.y < 223.0 / 255.0) {
+        normal.y = -1.0;
+    } else {
+        normal.y = 2.0;
+    }
+
+    if (bump.z < 95.0 / 255.0) {
+        normal.z = -1.0;
+    } else if (bump.z < 159.0 / 255.0) {
+        normal.z = 0.0;
+    } else if (bump.z < 223.0 / 255.0) {
+        normal.z = 1.0;
+    } else {
+        normal.z = 2.0;
+    }
+
+    return normal;
+}
+
+float computeNormalScalarProduct(vec3 vector1, vec3 vector2, float norm2) {
+    float SP = 0.0;
+    float norm1 = 0.0;
+
+    if (vector1.x != 2.0) {
+        if (vector1.y != 2.0) {
+            if (vector1.z != 2.0) {
+                norm1 = length(vector1);
+                if (norm1 > 0.0) {
+                    SP = dot(vector1, vector2);
+                    SP /= norm1 * norm2;
+                }
+            } else {
+                norm1 = length(vec3(vector1.xy, 1.0));
+                if (norm1 > 0.0) {
+                    SP = dot(vector1.xy, vector2.xy) + abs(vector2.z);
+                    SP /= norm1 * norm2;
+                }
+            }
+        } else {
+            if (vector1.z != 2.0) {
+                norm1 = length(vec3(vector1.xz, 1.0));
+                if (norm1 > 0.0) {
+                    SP = dot(vector1.xz, vector2.xz) + abs(vector2.y);
+                    SP /= norm1 * norm2;
+                }
+            } else {
+                norm1 = length(vec3(vector1.x, 1.0, 1.0));
+                if (norm1 > 0.0) {
+                    SP = vector1.x * vector2.x + abs(vector2.y) + abs(vector2.z);
+                    SP /= norm1 * norm2;
+                }
+            }
+        }
+    } else {
+        if (vector1.y != 2.0) {
+            if (vector1.z != 2.0) {
+                norm1 = length(vec3(vector1.yz, 1.0));
+                if (norm1 > 0.0) {
+                    SP = dot(vector1.yz, vector2.yz) + abs(vector2.x);
+                    SP /= norm1 * norm2;
+                }
+            } else {
+                norm1 = length(vec3(vector1.y, 1.0, 1.0));
+                if (norm1 > 0.0) {
+                    SP = vector1.y * vector2.y + abs(vector2.x) + abs(vector2.z);
+                    SP /= norm1 * norm2;
+                }
+            }
+        } else {
+            if (vector1.z != 2.0) {
+                norm1 = length(vec3(vector1.z, 1.0, 1.0));
+                if (norm1 > 0.0) {
+                    SP = vector1.z * vector2.z + abs(vector2.x) + abs(vector2.y);
+                    SP /= norm1 * norm2;
+                }
+            } else {
+                SP = 1.0;
+            }
+        }
+    }
+
+    return SP;
+}
+
+bool hitBox(vec3 projectedPos, vec3 objDims, vec3 objNormal) {
+    if (dot(-objNormal, projectedPos) > dot(-objNormal, vec3(0.0)) + 0.00001) {
+        return false;
+    }
+    if (dot(objNormal, projectedPos) > dot(objNormal, vec3(0.0, 0.0, objDims.z))) {
+        return false;
+    }
+
+    float alpha = asin(objNormal.x);
+    float beta = acos(objNormal.z / cos(alpha));
+
+    vec3 upNormal = vec3(0, cos(alpha), sin(alpha));
+
+    if (dot(upNormal, projectedPos) >  dot(upNormal, vec3(0.0, objDims.y, 0.0))) {
+        return false;
+    }
+    if (dot(-upNormal, projectedPos) > dot(-upNormal, vec3(0.0))) {
+        return false;
+    }
+
+    vec3 sideNormal = vec3(cos(beta), sin(alpha) * sin(beta), -cos(alpha) * sin(beta));
+
+    if (dot(-sideNormal, projectedPos) >  dot(-sideNormal, vec3(0.0))) {
+        return false;
+    }
+
+    return dot(sideNormal, projectedPos) <= dot(sideNormal, vec3(objDims.x, 0.0, 0.0));
+}
+
+void main() {
+    vec2 texelCoords = vec2(v_sheetPos.x / u_sheetDims.x, 1.0 - v_sheetPos.y / u_sheetDims.y);
+    vec4 texel = texture2D(u_textureSheet, texelCoords);
+
+    if (texel.a > 0.0) {
+        vec4 bump = texture2D(u_bumpSheet, texelCoords);
+        vec3 normal = bumpToNormal(bump.xyz);
+
+        float norm = 1.0;
+        vec3 RGB = vec3(0.0);
+
+        // lights
+        for (int i = 0; i < MAXNUM; i++) {
+            vec3 lightPos = u_lightPos[i];
+            vec3 ray = lightPos - v_objPos;
+            vec3 restLight = u_lightColors[i].rgb;
+
+            // occlusion
+            for (int j = 0; j < MAXNUM; j++) {
+                if (float(j) != v_objInd) {
+                    if (restLight != vec3(0.0)) {
+                        vec3 occluderPos = u_objPos[j];
+                        vec3 occluderNormal = u_objNormals[j];
+                        float dotNormalRay = dot(occluderNormal, ray);
+                        
+                        if (dotNormalRay != 0.0) {
+                            float lambda = dot(occluderNormal, occluderPos - v_objPos) / dotNormalRay;
+            
+                            if (lambda > 0.0 && lambda < 1.0) {
+                                vec3 occluderDims = u_objDims[j];
+                                vec3 projectedPos = v_objPos + lambda * ray - occluderPos;
+            
+                                if (hitBox(projectedPos, occluderDims, occluderNormal)) {
+                                    vec4 occluderTexel = texture2D(u_textureSheet, vec2((projectedPos.x + u_objSheetPos[j].x) / u_sheetDims.x, 1.0 - (occluderDims.y - projectedPos.y + u_objSheetPos[j].y) / u_sheetDims.y));
+                                    
+                                    if (occluderTexel.a > 0.0) {
+                                        restLight *= occluderTexel.rgb * (1.0 - occluderTexel.a);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (restLight != vec3(0.0)) {
+                float rayNorm = length(ray);
+                float brightness = 0.0;
+
+                if (rayNorm > 0.0) {
+                    float SP = computeNormalScalarProduct(normal, ray, rayNorm);
+                    
+                    if (SP > 0.0) {
+                        brightness = u_lightColors[i].a * SP * pow(LIGHT_SCALAR / rayNorm, DISTANCE_EXP);
+                    }
+                }
+
+                RGB += brightness * restLight / 255.0;
+            }
+        }
+
+        vec3 over = vec3(max(vec3(0.0), RGB - vec3(1.0)));
+        gl_FragColor = vec4(texel.rgb * max(min(vec3(1.0), RGB), u_ambientLight.rgb * u_ambientLight.a) + 0.1 * over, texel.a);
+    }
+}
+`;
+
+let WIDTH = window.innerWidth;
+let HEIGHT = window.innerHeight;
+let VIEW_ANGLE = 45, ASPECT = WIDTH / HEIGHT, NEAR = 1, FAR = 1000;
+
+let renderer = new THREE.WebGLRenderer();
+let camera = new THREE.PerspectiveCamera(VIEW_ANGLE, ASPECT, NEAR, FAR);
+let scene = new THREE.Scene();
+
+renderer.setSize(WIDTH, HEIGHT);
+document.body.appendChild(renderer.domElement);
+scene.add(camera);
 
 window.onresize = function resize() {
-    width = window.innerWidth;
-    height = window.innerHeight;
-    APPLICATION.renderer.resize(width, height);
-    APPLICATION.stage.width = width;
-    APPLICATION.stage.height = height;
-    APPLICATION.stage.filterArea = new PIXI.Rectangle(0, 0, width, height);
-    canvasFilter.uniforms.dimensions = [width, height, depth];
+    WIDTH = window.innerWidth;
+    HEIGHT = window.innerHeight;
+    ASPECT = WIDTH / HEIGHT;
+    camera.aspect = ASPECT;
+    camera.updateProjectionMatrix();
+    renderer.setSize(WIDTH, HEIGHT);
 }
 
-document.body.appendChild(APPLICATION.view);
+window.addEventListener("keydown", event => {
+    function enterFullscreen() {
+        if (document.documentElement.requestFullscreen) {
+            document.documentElement.requestFullscreen();
+        } else if (document.documentElement.mozRequestFullScreen) {
+            document.documentElement.mozRequestFullScreen();
+        } else if (document.documentElement.msRequestFullscreen) {
+            document.documentElement.msRequestFullscreen();
+        } else if (document.documentElement.webkitRequestFullscreen) {
+            document.documentElement.webkitRequestFullscreen();
+        }
+    }
 
-const ambientLight = [255, 255, 255, 0.2];
+    function exitFullscreen() {
+        if (document.exitFullscreen) {
+            document.exitFullscreen();
+        } else if (document.mozCancelFullScreen) {
+            document.mozCancelFullScreen();
+        } else if (document.webkitExitFullscreen) {
+            document.webkitExitFullscreen();
+        }
+    }
+    if (event.keyCode == 122) {
+        if (
+            (document.fullScreenElement && document.fullScreenElement !== null) ||
+            (document.mozFullScreen || document.webkitIsFullScreen)
+        ) {
+            exitFullscreen();
+        } else {
+            enterFullscreen();
+        }
+        event.preventDefault();
+    }
+});
 
-APPLICATION.stage.filterArea = new PIXI.Rectangle(0, 0, width, height);
-let canvasFilter;
+let textureSheet = new THREE.TextureLoader().load("assets/textureSheet.png");
+textureSheet.magFilter = THREE.NearestFilter;
+textureSheet.minFilter = THREE.NearestFilter;
+let bumpSheet = new THREE.TextureLoader().load("assets/bumpSheet.png");
+bumpSheet.magFilter = THREE.NearestFilter;
+bumpSheet.minFilter = THREE.NearestFilter;
 
-let clickX = 0;
-let clickY = 0;
+let uniforms = {
+    u_dimensions: { type: 'vec3', value: new Float32Array([1.0, 1.0, 0.0]) },
+    u_ambientLight: { type: 'vec4', value: new Float32Array([1.0, 1.0, 1.0, 0.2])},
+    u_textureSheet: { type: 'sampler2D', value: textureSheet },
+    u_bumpSheet: { type: 'sampler2D', value: bumpSheet },
+    u_sheetDims: { type: 'vec2', value: new Float32Array([128, 64]) },
+    u_objPos: { type: 'vec3', value: new Float32Array(MAXNUM*3) },
+    u_objSheetPos: { type: 'vec2', value: new Float32Array(MAXNUM*2) },
+    u_objNormals: { type: 'vec3', value: new Float32Array(MAXNUM*3) },
+    u_objDims: { type: 'vec3', value: new Float32Array(MAXNUM*3) },
+    u_lightColors: { type: 'vec4', value: new Float32Array(MAXNUM*4) },
+    u_lightPos: { type: 'vec3', value: new Float32Array(MAXNUM*3) }
+};
 
-/**
- * entities
- */
-const objects = [];
-function createObject(x, y, z, width, height, reflect, sheetCoord, sheetNumber) {
-    const object = {
-        id: `o${objects.length}`,
-        x: x,
-        y: y,
-        z: z,
-        width: width,
-        height: height,
-        scale: (1 + 4 * z / depth),
-        reflect: reflect,
-        sheetCoord: sheetCoord,
-        sheetNumber: sheetNumber
-    };
-    objects.push(object);
-    return object;
-}
+let shaderMaterial = new THREE.ShaderMaterial({
+    uniforms: uniforms,
+    vertexShader:   vSrc,
+    fragmentShader: fSrc,
+});
 
+const sprites = [];
 const lights = [];
-function createLight(x, y, z, r, g, b, i) {
-    const light = {
-        id: `l${lights.length}`,
-        position: [x, y, z],
-        color: [r, g, b, i]
+
+function createSprite(dims, sheetCoordX, numAnimationsFrames) {
+    const ind = sprites.length;
+    if (ind == MAXNUM) {
+        return null;
+    }
+    let vertices = [
+              0,       0, 0,
+        dims[0],       0, 0,
+              0, dims[1], 0,
+        dims[0],       0, 0,
+        dims[0], dims[1], 0,
+              0, dims[1], 0,
+    ];
+    let sheetVertices = [
+                  sheetCoordX, dims[1] + 0, //down left
+        dims[0] + sheetCoordX, dims[1] + 0, //down right
+                  sheetCoordX,           0, //up left
+        dims[0] + sheetCoordX, dims[1] + 0, //down right
+        dims[0] + sheetCoordX,           0, //up right
+                  sheetCoordX,           0, //up left
+    ];
+    let indices = [];
+    for (let j = 0; j < 6; j++) {
+        indices.push(ind);
+    }
+
+    let geometry = new THREE.BufferGeometry();
+    geometry.addAttribute('position', new THREE.BufferAttribute(new Float32Array(vertices), 3));
+    geometry.addAttribute('a_sheetVertices', new THREE.BufferAttribute(new Float32Array(sheetVertices), 2));
+    geometry.addAttribute('a_objInd', new THREE.BufferAttribute(new Float32Array(indices), 1));
+
+    let sprite = {
+        index: ind,
+        x: 0,
+        y: 0,
+        z: 0,
+        width: dims[0],
+        height: dims[1],
+        animationFrame: 0,
+        numAnimationsFrames: numAnimationsFrames,
+        mesh: new THREE.Mesh(geometry, shaderMaterial),
+        move: function(dx, dy, dz) {
+            this.mesh.geometry.attributes.position.needsUpdate = true;
+            for (let i = 0; i < 18; i++) {
+                this.mesh.geometry.attributes.position.array[i] += i % 3 == 0 ? dx : (i % 3 == 1 ? dy : dz);
+            }
+            this.x += dx;
+            this.y += dy;
+            this.z += dz;
+            uniforms.u_objPos.value[this.index * 3] += dx;
+            uniforms.u_objPos.value[this.index * 3 + 1] += dy;
+            uniforms.u_objPos.value[this.index * 3 + 2] += dz;
+        },
+        set: function(x, y, z) {
+            const values = [
+                          x,           y, z,
+                dims[0] + x,           y, z,
+                          x, dims[1] + y, z,
+                dims[0] + x,           y, z,
+                dims[0] + x, dims[1] + y, z,
+                          x, dims[1] + y, z,
+            ];
+            this.mesh.geometry.attributes.position.needsUpdate = true;
+            for (let i = 0; i < 18; i++) {
+                this.mesh.geometry.attributes.position.array[i] = values[i];
+            }
+            this.x = x;
+            this.y = y;
+            this.z = z;
+            uniforms.u_objPos.value[this.index * 3] = x;
+            uniforms.u_objPos.value[this.index * 3 + 1] = y;
+            uniforms.u_objPos.value[this.index * 3 + 2] = z;
+        },
+        animationStep: function() {
+            if (++this.animationFrame >= this.numAnimationsFrames) {
+                this.animationFrame = 0;
+            }
+            const sheetCoordY = this.animationFrame * (this.height + 1);
+            let values = [
+                dims[1] + sheetCoordY,
+                dims[1] + sheetCoordY,
+                          sheetCoordY,
+                dims[1] + sheetCoordY,
+                          sheetCoordY,
+                          sheetCoordY,
+            ];
+            this.mesh.geometry.attributes.a_sheetVertices.needsUpdate = true;
+            for (let i = 0; i < 6; i++) {
+                this.mesh.geometry.attributes.a_sheetVertices.array[i*2 + 1] = values[i];
+            }
+            uniforms.u_objSheetPos.value[ind * 2 + 1] = sheetCoordY;
+        }
     };
+
+    sprite.mesh.material.depthWrite = false;
+    sprite.mesh.material.transparent = true;
+    scene.add(sprite.mesh);
+
+    sprites.push(sprite);
+
+    sprite.set(0, 0, 0);
+    uniforms.u_objSheetPos.value[ind * 2] = sheetCoordX;
+    uniforms.u_objSheetPos.value[ind * 2 + 1] = 0;
+    for (let i = 0; i < 3; i++) {
+        uniforms.u_objNormals.value[ind * 3 + i] = i < 2 ? 0 : 1;
+        uniforms.u_objDims.value[ind * 3 + i] = i < 2 ? dims[i] : 10;
+    }
+
+    return sprite;
+}
+
+function createLight(color, pos) {
+    const ind = lights.length;
+    if (ind == MAXNUM) {
+        return null;
+    }
+    
+    for (let i = 0; i < 4; i++) {
+        uniforms.u_lightColors.value[ind * 4 + i] = color[i];
+        if (i < 3) {
+            uniforms.u_lightPos.value[ind * 3 + i] = pos[i];
+        }
+    }
+
+    let light = {
+        index: ind,
+        color: color,
+        pos: pos,
+        set: function(x, y, z) {
+            this.pos[0] = x;
+            this.pos[1] = y;
+            this.pos[2] = z;
+            uniforms.u_lightPos.value[this.index * 3] = x;
+            uniforms.u_lightPos.value[this.index * 3 + 1] = y;
+            uniforms.u_lightPos.value[this.index * 3 + 2] = z;
+        },
+    };
+
     lights.push(light);
     return light;
 }
 
-PIXI.loader
-    .add("object_sheet0", `assets/object_sheet0.png`)
-    .load(setup);
-
-function setup() {
-    const char1 = createObject(50, 50, 400, 22, 57, 0.1, [0, 0], 0);
-    const char2 = createObject(200, 150, 300, 22, 57, 0.1, [0, 0], 0);
-    const char3 = createObject(900, 300, 249, 11, 11, 1, [72, 0], 0);
-    //const char4 = createObject(150, 50, 300, 22, 57, 0.1, [0, 0], 0);
-    //const char5 = createObject(150, 50, 300, 22, 57, 0.1, [0, 0], 0);
-    const char6 = createObject(150, 50, 350, 50, 50, 1.0, [22, 0], 0);
-
-    createLight(300, 300, 450, 255, 255, 255, 20);
-    createLight(900, 300, 250, 255, 255, 0, 10);
-    /*createLight(500, 500, 250, 255, 255, 255, 8);
-    createLight(750, 150, 500, 0, 0, 255, 3);
-    createLight(150, 750, 0, 255, 255, 0, 7);
-    createLight(550, 150, 200, 0, 255, 255, 4);
-    createLight(150, 550, 350, 255, 0, 255, 11);
-    createLight(750, 750, 450, 128, 192, 255, 7);
-    createLight(1050, 150, 500, 192, 255, 128, 1);
-    createLight(1050, 850, 0, 255, 128, 192, 9);*/
-
-    /**
-     * test
-     */
-    document.addEventListener("mousedown", event => {
-        objects.sort((o1, o2) => o2.z - o1.z);
-        clickX = event.clientX;
-        clickY = event.clientY;
-        //console.log(clickX, clickY);
-
-        for (let object of objects) {
-            if (clickX >= object.x && clickY >= object.y && clickX < object.x + object.width * object.scale && clickY < object.y + object.height * object.scale) {
-                clickX -= object.x;
-                clickY -= object.y;
-                object.drag = true;
-                break;
-            }
-        }
-    });
-    document.addEventListener("mousemove", event => {
-        for (let object of objects) {
-            if (object.drag) {
-                object.x = event.clientX - clickX;
-                object.y = event.clientY - clickY;
-                eval(`canvasFilter.uniforms.${object.id}Position = [object.x, object.y, object.z];`);
-                break;
-            }
-        }
-    });
-    document.addEventListener("mouseup", _ => {
-        for (let object of objects) {
-            if (object.drag) {
-                object.drag = false;
-                break;
-            }
-        }
-    });
-    window.addEventListener("keydown", event => {
-        function enterFullscreen() {
-            if (document.documentElement.requestFullscreen) {
-                document.documentElement.requestFullscreen();
-            } else if (document.documentElement.mozRequestFullScreen) {
-                document.documentElement.mozRequestFullScreen();
-            } else if (document.documentElement.msRequestFullscreen) {
-                document.documentElement.msRequestFullscreen();
-            } else if (document.documentElement.webkitRequestFullscreen) {
-                document.documentElement.webkitRequestFullscreen();
-            }
-        }
-
-        function exitFullscreen() {
-            if (document.exitFullscreen) {
-                document.exitFullscreen();
-            } else if (document.mozCancelFullScreen) {
-                document.mozCancelFullScreen();
-            } else if (document.webkitExitFullscreen) {
-                document.webkitExitFullscreen();
-            }
-        }
-        if (event.keyCode == 122) {
-            if (
-                (document.fullScreenElement && document.fullScreenElement !== null) ||
-                (document.mozFullScreen || document.webkitIsFullScreen)
-            ) {
-                exitFullscreen();
-            } else {
-                enterFullscreen();
-            }
-            event.preventDefault();
-        }
-    });
-
-    updateShader();
-
-    APPLICATION.ticker.add(gameloop);
-}
-
-function updateShader() {
-    objects.sort((o1, o2) => o1.z - o2.z);
-    let lightInitials = false;
-    const uniforms = {};
-    uniforms.dimensions = { type: 'vec3', value: [width, height, depth] };
-    uniforms.ambientLight = { type: 'vec4', value: ambientLight };
-    uniforms.objectSheet0 = { type: 'sampler2D', value: PIXI.loader.resources["object_sheet0"].texture };
-    uniforms.objectSheet0Dims = { type: 'vec2', value: [83, 114] };
-
-    let imports = `
-precision mediump float;
-
-uniform vec3 dimensions;
-uniform vec4 ambientLight;
-uniform sampler2D objectSheet0;
-uniform vec2 objectSheet0Dims;
-    `;
-
-    let mainStart = `
-bool hit(in vec2 xy, in vec2 pos, in vec2 dims) {
-    return xy.x >= pos.x && xy.y >= pos.y && xy.x < pos.x + dims.x && xy.y < pos.y + dims.y;
-}
-
-void main(void) {
-    vec2 xy = vec2(gl_FragCoord.x, dimensions.y - gl_FragCoord.y);
-    `;
-
-    let main = `
-    gl_FragColor = vec4(0., 0., 0., 1.);
-    `;
-
-    for (let object of objects) {
-        eval(`uniforms.${object.id}Position = { type: 'vec3', value: [object.x, object.y, object.z] };`);
-        eval(`uniforms.${object.id}Dimensions = { type: 'vec3', value: [object.width, object.height, object.scale] };`);
-        eval(`uniforms.${object.id}Reflect = { type: 'float', value: object.reflect };`);
-        eval(`uniforms.${object.id}SheetCoord = { type: 'vec2', value: object.sheetCoord };`);
-
-        imports += `
-uniform vec3 ${object.id}Position;
-uniform vec3 ${object.id}Dimensions;
-uniform float ${object.id}Reflect;
-uniform vec2 ${object.id}SheetCoord;
-        `;
-
-        main += `
-    if (hit(xy, ${object.id}Position.xy, ${object.id}Dimensions.xy * ${object.id}Dimensions.z)) {
-        vec2 ${object.id}TexturePos = ((xy - ${object.id}Position.xy) / ${object.id}Dimensions.z + ${object.id}SheetCoord) / objectSheet${object.sheetNumber}Dims;
-        vec4 ${object.id}Color = texture2D(objectSheet${object.sheetNumber}, ${object.id}TexturePos);
-        if (${object.id}Color.a != 0.) {
-            vec4 ${object.id}Bump = texture2D(objectSheet${object.sheetNumber}, ${object.id}TexturePos + vec2(0., ${object.height}. / objectSheet${object.sheetNumber}Dims.y));
-
-            vec3 ${object.id}Normal = vec3(0., 0., 0.);
-
-            if (${object.id}Bump.x < 95. / 255.) {
-                ${object.id}Normal.x = -1.;
-            } else if (${object.id}Bump.x < 159. / 255.) {
-                ${object.id}Normal.x = 0.;
-            } else if (${object.id}Bump.x < 223. / 255.) {
-                ${object.id}Normal.x = 1.;
-            } else {
-                ${object.id}Normal.x = 2.;
-            }
-        
-            if (${object.id}Bump.y < 95. / 255.) {
-                ${object.id}Normal.y = -1.;
-            } else if (${object.id}Bump.y < 159. / 255.) {
-                ${object.id}Normal.y = 0.;
-            } else if (${object.id}Bump.y < 223. / 255.) {
-                ${object.id}Normal.y = 1.;
-            } else {
-                ${object.id}Normal.y = 2.;
-            }
-
-            if (${object.id}Bump.z < 95. / 255.) {
-                ${object.id}Normal.z = -1.;
-            } else if (${object.id}Bump.z < 159. / 255.) {
-                ${object.id}Normal.z = 0.;
-            } else if (${object.id}Bump.z < 223. / 255.) {
-                ${object.id}Normal.z = 1.;
-            } else {
-                ${object.id}Normal.z = 2.;
-            }
-
-            float ${object.id}Norm = 1.;
-
-            vec3 ${object.id}RGB = vec3(0., 0., 0.);
-        `;
-
-        for (let light of lights) {
-            if (!lightInitials) {
-                eval(`uniforms.${light.id}Color = { type: 'vec4', value: light.color };`);
-                eval(`uniforms.${light.id}Position = { type: 'vec3', value: light.position };`);
-
-                imports += `
-uniform vec4 ${light.id}Color;
-uniform vec3 ${light.id}Position;
-                `;
-            }
-
-            main += `
-            vec3 ${light.id}RestColor = ${light.id}Color.rgb;
-            `;
-
-            for (let occluder of objects) {
-                if (occluder.id == object.id) continue;
-                main += `
-            if (${light.id}RestColor != vec3(0., 0., 0.)) {
-                float ${object.id}${occluder.id}Lambda = (${object.id}Position.z - ${light.id}Position.z) / (${occluder.id}Position.z - ${light.id}Position.z);
-
-                if (${object.id}${occluder.id}Lambda > 1.) {
-                    vec2 ${object.id}${occluder.id}XY = floor(${light.id}Position.xy + (xy - ${light.id}Position.xy) / ${object.id}${occluder.id}Lambda - ${occluder.id}Position.xy);
-
-                    if (hit(${object.id}${occluder.id}XY, vec2(0., 0.), ${occluder.id}Dimensions.xy * ${occluder.id}Dimensions.z)) {
-                        vec4 ${occluder.id}Color = texture2D(objectSheet${object.sheetNumber}, (${object.id}${occluder.id}XY / ${occluder.id}Dimensions.z + ${occluder.id}SheetCoord) / objectSheet${occluder.sheetNumber}Dims);
-                        if (${occluder.id}Color.a > 0.) {
-                            if (${occluder.id}Color.a < 1.) {
-                                ${light.id}RestColor *= ${occluder.id}Color.rgb;
-                            } else {
-                                ${light.id}RestColor *= 0.;
-                            }
-                        }
-                    }
-                }
-            }
-                `;
-            }
-
-            main += `
-            if (${light.id}RestColor != vec3(0., 0., 0.)) {
-                vec3 ${object.id}${light.id}Ray = vec3(${light.id}Position.xy - xy, ${light.id}Position.z - ${object.id}Position.z);
-                float ${object.id}${light.id}Norm = length(${object.id}${light.id}Ray);
-
-                float ${object.id}${light.id}SP = 0.;
-                if (${object.id}${light.id}Norm > 0.) {
-                    if (${object.id}Normal.x != 2.) {
-                        if (${object.id}Normal.y != 2.) {
-                            if (${object.id}Normal.z != 2.) {
-                                ${object.id}Norm = length(${object.id}Normal);
-                                if (${object.id}Norm > 0.) {
-                                    ${object.id}${light.id}SP = dot(${object.id}Normal, ${object.id}${light.id}Ray);
-                                    ${object.id}${light.id}SP /= ${object.id}Norm * ${object.id}${light.id}Norm;
-                                }
-                            } else {
-                                ${object.id}Norm = length(vec3(${object.id}Normal.xy, 1.));
-                                if (${object.id}Norm > 0.) {
-                                    ${object.id}${light.id}SP = dot(${object.id}Normal.xy, ${object.id}${light.id}Ray.xy) + abs(${object.id}${light.id}Ray.z);
-                                    ${object.id}${light.id}SP /= ${object.id}Norm * ${object.id}${light.id}Norm;
-                                }
-                            }
-                        } else {
-                            if (${object.id}Normal.z != 2.) {
-                                ${object.id}Norm = length(vec3(${object.id}Normal.xz, 1.));
-                                if (${object.id}Norm > 0.) {
-                                    ${object.id}${light.id}SP = dot(${object.id}Normal.xz, ${object.id}${light.id}Ray.xz) + abs(${object.id}${light.id}Ray.y);
-                                    ${object.id}${light.id}SP /= ${object.id}Norm * ${object.id}${light.id}Norm;
-                                }
-                            } else {
-                                ${object.id}Norm = length(vec3(${object.id}Normal.x, 1., 1.));
-                                if (${object.id}Norm > 0.) {
-                                    ${object.id}${light.id}SP = ${object.id}Normal.x * ${object.id}${light.id}Ray.x + abs(${object.id}${light.id}Ray.y) + abs(${object.id}${light.id}Ray.z);
-                                    ${object.id}${light.id}SP /= ${object.id}Norm * ${object.id}${light.id}Norm;
-                                }
-                            }
-                        }
-                    } else {
-                        if (${object.id}Normal.y != 2.) {
-                            if (${object.id}Normal.z != 2.) {
-                                ${object.id}Norm = length(vec3(${object.id}Normal.yz, 1.));
-                                if (${object.id}Norm > 0.) {
-                                    ${object.id}${light.id}SP = dot(${object.id}Normal.yz, ${object.id}${light.id}Ray.yz) + abs(${object.id}${light.id}Ray.x);
-                                    ${object.id}${light.id}SP /= ${object.id}Norm * ${object.id}${light.id}Norm;
-                                }
-                            } else {
-                                ${object.id}Norm = length(vec3(${object.id}Normal.y, 1., 1.));
-                                if (${object.id}Norm > 0.) {
-                                    ${object.id}${light.id}SP = ${object.id}Normal.y * ${object.id}${light.id}Ray.y + abs(${object.id}${light.id}Ray.x) + abs(${object.id}${light.id}Ray.z);
-                                    ${object.id}${light.id}SP /= ${object.id}Norm * ${object.id}${light.id}Norm;
-                                }
-                            }
-                        } else {
-                            if (${object.id}Normal.z != 2.) {
-                                ${object.id}Norm = length(vec3(${object.id}Normal.z, 1., 1.));
-                                if (${object.id}Norm > 0.) {
-                                    ${object.id}${light.id}SP = ${object.id}Normal.z * ${object.id}${light.id}Ray.z + abs(${object.id}${light.id}Ray.x) + abs(${object.id}${light.id}Ray.y);
-                                    ${object.id}${light.id}SP /= ${object.id}Norm * ${object.id}${light.id}Norm;
-                                }
-                            } else {
-                                ${object.id}${light.id}SP = 1.;
-                            }
-                        }
-                    }
-                }
-
-                float ${object.id}${light.id}Brightness = 0.;
-                if (${object.id}${light.id}SP > 0.) {
-                    ${object.id}${light.id}Brightness = 25. * ${light.id}Color.a / ${object.id}${light.id}Norm * ${object.id}${light.id}SP;
-                }
-
-                ${object.id}RGB += ${object.id}${light.id}Brightness * ${light.id}RestColor / 255.;
-            }
-            `;
-        }
-
-        main += `
-            vec3 ${object.id}Over = vec3(max(vec3(0.), ${object.id}RGB - vec3(1.)));
-            gl_FragColor = vec4(mix(gl_FragColor.rgb * ${object.id}Color.rgb, min(vec3(1.), max(ambientLight.rgb / 255. * ambientLight.a, min(vec3(1. + ${object.id}Reflect),${object.id}RGB)) * ${object.id}Color.rgb + .1 * ${object.id}Over), ${object.id}Color.a), 1.);
+function getSprite(index) {
+    for (let sprite of sprites) {
+        if (sprite.index == index) {
+            return sprite;
         }
     }
-        `;
-        lightInitials = true;
+    return null;
+}
+
+function createPlayerSprite() {
+    return createSprite([22, 57], 0, 1);
+}
+
+/**
+ * tests
+ */
+
+function createTestSprite() {
+    return createSprite([50, 50], 23, 1);
+}
+
+createLight([1, 1, 1, 20], [0, 0, 10]);
+createLight([1, 1, 1, 20], [-50, 100, 10]);
+createLight([1, 1, 1, 20], [-100, 0, 10]);
+//createLight([1, 1, 1, 20], [-100, 0, -40]);
+createTestSprite();
+createSprite([24, 12], 86, 2);
+getSprite(1).set(-10,0,-10);
+
+for (let i = 0; i < 3; i++) {
+    createPlayerSprite();
+}
+
+getSprite(2).set(-10, 0, 20);
+getSprite(3).set(-10, 0, -15);
+getSprite(4).set(-10, 0, -20);
+
+function clientTo3D(x, y, z3D) {
+    var vec = new THREE.Vector3();
+    var pos = new THREE.Vector3();
+
+    vec.set(
+        (x / WIDTH) * 2 - 1,
+        -(y / HEIGHT) * 2 + 1,
+        0.5
+    );
+
+    vec.unproject(camera);
+    vec.sub(camera.position).normalize();
+    var distance = -camera.position.z / vec.z;
+
+    pos.copy(camera.position).add(vec.multiplyScalar(distance));
+    pos.z = z3D;
+
+    return pos;
+}
+
+let mouse = { x: 0, y: 0, dx: 0, dy: 0 };
+
+document.addEventListener("mousedown", event => {
+    mouse.x = event.clientX;
+    mouse.y = event.clientY;
+    let mouse3D = clientTo3D(mouse.x, mouse.y, 0);
+
+    for (let sprite of sprites) {
+        if (mouse3D.x >= sprite.x && mouse3D.y >= sprite.y && mouse3D.x < sprite.x + sprite.width && mouse3D.y < sprite.y + sprite.height) {
+            mouse.dx = mouse3D.x - sprite.x;
+            mouse.dy = mouse3D.y - sprite.y;
+            sprite.drag = true;
+            break;
+        }
+    }
+});
+document.addEventListener("mousemove", event => {
+    let pos = clientTo3D(event.clientX, event.clientY, 0);
+
+    for (let sprite of sprites) {
+        if (sprite.drag) {
+            sprite.set(pos.x - mouse.dx, pos.y - mouse.dy, sprite.z);
+            break;
+        }
+    }
+});
+document.addEventListener("mouseup", _ => {
+    for (let sprite of sprites) {
+        if (sprite.drag) {
+            sprite.drag = false;
+            break;
+        }
+    }
+});
+
+camera.position.z = 300;
+camera.lookAt(new THREE.Vector3(0,0,0));
+
+let count = 0;
+
+function animate() {
+    requestAnimationFrame(animate);
+
+    count++;
+    
+    if (count == 5) {
+        getSprite(1).animationStep();
+        count = 0;
     }
 
-    const fragSrc = imports + mainStart + main + `
-}
-    `;
+    sprites.sort((s1, s2) => s1.z - s2.z);
+    for (let i = 0; i < sprites.length; i++) {
+        sprites[i].mesh.renderOrder = i;
+    }
+    
+    //camera.position.x = -300 * Math.sin(Date.now()/1000);
+    //camera.position.z = -300 * Math.cos(Date.now()/1000);
+    //camera.lookAt(new THREE.Vector3(0,0,0));
 
-    canvasFilter = new PIXI.Filter(null, fragSrc, uniforms);
-    APPLICATION.stage.filters = [canvasFilter];
+	renderer.render(scene, camera);
 }
-
-function gameloop(delta) {
-    //char1.x = char1.x > width ? -100 : char1.x + 10;
-    //canvasFilter.uniforms.char1Position = [char1.position.x, char1.position.y, char1.z];
-    //char2.x = char2.x > width ? -100 : char2.x + 10;
-    //canvasFilter.uniforms.char1Position = [char2.position.x, char2.position.y, char2.z];
-}
+animate();
