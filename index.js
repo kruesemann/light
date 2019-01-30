@@ -280,16 +280,29 @@ window.addEventListener("keydown", event => {
             document.webkitExitFullscreen();
         }
     }
-    if (event.keyCode == 122) {
-        if (
-            (document.fullScreenElement && document.fullScreenElement !== null) ||
-            (document.mozFullScreen || document.webkitIsFullScreen)
-        ) {
-            exitFullscreen();
-        } else {
-            enterFullscreen();
-        }
-        event.preventDefault();
+    switch (event.keyCode) {
+        case 37:
+            getSprite(3).move(-5,0,0);
+            break;
+        case 38:
+            getSprite(3).move(0,0,-5);
+            break;
+        case 39:
+            getSprite(3).move(5,0,0);
+            break;
+        case 40:
+            getSprite(3).move(0,0,5);
+            break;
+        case 122:
+            if (
+                (document.fullScreenElement && document.fullScreenElement !== null) ||
+                (document.mozFullScreen || document.webkitIsFullScreen)
+            ) {
+                exitFullscreen();
+            } else {
+                enterFullscreen();
+            }
+            event.preventDefault();
     }
 });
 
@@ -486,21 +499,21 @@ function createTestSprite() {
     return createSprite([50, 50], 23, 1);
 }
 
-createLight([1, 1, 1, 20], [0, 0, 10]);
-createLight([1, 1, 1, 20], [-50, 100, 10]);
-createLight([1, 1, 1, 20], [-100, 0, 10]);
+createLight([1, 1, 1, 20], [0, 0, 15]);
+createLight([1, 1, 1, 20], [-150, 0, -20]);
+//createLight([1, 1, 1, 20], [-100, 0, 10]);
 //createLight([1, 1, 1, 20], [-100, 0, -40]);
 createTestSprite();
 createSprite([24, 12], 86, 2);
 getSprite(1).set(-10,0,-10);
+createSprite([16, 12], 111, 1);
 
-for (let i = 0; i < 3; i++) {
+for (let i = 0; i < 2; i++) {
     createPlayerSprite();
 }
 
-getSprite(2).set(-10, 0, 20);
+getSprite(2).set(-10, 0, 10);
 getSprite(3).set(-10, 0, -15);
-getSprite(4).set(-10, 0, -20);
 
 function clientTo3D(x, y, z3D) {
     var vec = new THREE.Vector3();
@@ -557,6 +570,7 @@ document.addEventListener("mouseup", _ => {
     }
 });
 
+camera.position.y = 100;
 camera.position.z = 300;
 camera.lookAt(new THREE.Vector3(0,0,0));
 
